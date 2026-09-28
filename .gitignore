@@ -5,3 +5,4 @@ __pycache__/
 kargo.db
 uploads/
 .pytest_cache/
+.vercel/

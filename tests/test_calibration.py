@@ -27,7 +27,7 @@ def _fixture_by_name(name: str) -> dict:
 
 def _redacted_text_for(fixture: dict) -> tuple[str, str]:
     path = PROJECT_ROOT / fixture["file"]
-    raw_text = parse_file(path)
+    raw_text = parse_file(path.name, path.read_bytes())
     contact = extract_contact_info(raw_text)
     location_flag = compute_location_flag(contact.get("city"), raw_text)
     redacted = redact_text(raw_text, contact)

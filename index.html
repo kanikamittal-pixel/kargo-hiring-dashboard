@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kargo Hiring Dashboard</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Kargo Hiring Dashboard</h1>
+    <nav id="tabs">
+      <button class="tab-btn active" data-tab="upload">Upload</button>
+      <button class="tab-btn" data-tab="score">Score</button>
+      <button class="tab-btn" data-tab="shortlist">Shortlist</button>
+      <button class="tab-btn" data-tab="review">Review</button>
+      <button class="tab-btn" data-tab="autoreject">Auto-Reject Log</button>
+      <button class="tab-btn" data-tab="decisionlog">Decision Log</button>
+      <button class="tab-btn" data-tab="allcandidates">All Candidates</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-upload" class="tab-panel active"></section>
+    <section id="tab-score" class="tab-panel"></section>
+    <section id="tab-shortlist" class="tab-panel"></section>
+    <section id="tab-review" class="tab-panel"></section>
+    <section id="tab-autoreject" class="tab-panel"></section>
+    <section id="tab-decisionlog" class="tab-panel"></section>
+    <section id="tab-allcandidates" class="tab-panel"></section>
+  </main>
+
+  <div id="toast-container"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

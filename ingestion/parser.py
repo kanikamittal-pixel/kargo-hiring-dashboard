@@ -1,4 +1,4 @@
-from pathlib import Path
+import io
 
 import docx
 import pdfplumber
@@ -11,18 +11,18 @@ class ParseError(Exception):
     pass
 
 
-def parse_file(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix == ".pdf":
-        return _parse_pdf(path)
-    if suffix == ".docx":
-        return _parse_docx(path)
-    raise ParseError(f"Unsupported file type: {suffix}")
+def parse_file(filename: str, file_bytes: bytes) -> str:
+    suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if suffix == "pdf":
+        return _parse_pdf(file_bytes)
+    if suffix == "docx":
+        return _parse_docx(file_bytes)
+    raise ParseError(f"Unsupported file type: .{suffix}")
 
 
-def _parse_pdf(path: Path) -> str:
+def _parse_pdf(file_bytes: bytes) -> str:
     try:
-        with pdfplumber.open(path) as pdf:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             pages = [page.extract_text() or "" for page in pdf.pages]
         text = "\n".join(pages).strip()
     except Exception as e:
@@ -32,9 +32,9 @@ def _parse_pdf(path: Path) -> str:
     return text
 
 
-def _parse_docx(path: Path) -> str:
+def _parse_docx(file_bytes: bytes) -> str:
     try:
-        d = docx.Document(path)
+        d = docx.Document(io.BytesIO(file_bytes))
         lines = list(_iter_block_text(d.element.body, d))
         text = "\n".join(l for l in lines if l.strip())
     except Exception as e:
