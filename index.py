@@ -7,7 +7,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -20,6 +20,11 @@ from ingestion.redact import compute_location_flag, extract_contact_info, redact
 from scoring.pipeline import score_all_pending  # noqa: E402
 from scoring.scorer import load_rubrics  # noqa: E402
 
+# Vercel's native Flask integration builds this whole file into a single Vercel Function and
+# invokes it with the real request path (unlike the older /api/*.py-as-individual-Lambda
+# convention), so routes are registered with their real /api/... paths, matching what public/app.js
+# actually calls. Vercel serves public/index.html, public/app.js, public/style.css straight from
+# its CDN and only invokes this function for paths that don't match a static file.
 app = Flask(__name__)
 
 _db_initialized = False
@@ -224,23 +229,23 @@ def decision_log():
     return jsonify(out)
 
 
-# Local dev only: Vercel serves index.html/app.js/style.css from its static CDN and never
-# routes these paths to this function, so these routes are dead weight (harmless) in prod.
+# Local dev only: Vercel serves public/index.html, public/app.js, public/style.css from its own
+# CDN and never routes those paths here, so these two routes are dead weight (harmless) in prod.
 @app.route("/")
 def _dev_index():
-    return (PROJECT_ROOT / "index.html").read_text(), 200, {"Content-Type": "text/html"}
+    return (PROJECT_ROOT / "public" / "index.html").read_text(), 200, {"Content-Type": "text/html"}
 
 
 @app.route("/<path:filename>")
 def _dev_static(filename):
-    file_path = PROJECT_ROOT / filename
+    file_path = PROJECT_ROOT / "public" / filename
     if not file_path.is_file() or file_path.suffix not in (".js", ".css", ".html"):
         return jsonify({"error": "not found"}), 404
     content_type = {".js": "text/javascript", ".css": "text/css", ".html": "text/html"}[file_path.suffix]
     return file_path.read_text(), 200, {"Content-Type": content_type}
 
 
-# Local dev entrypoint (`python api/index.py`). Vercel imports `app` directly.
+# Local dev entrypoint (`python index.py`). Vercel imports `app` directly and never runs this.
 if __name__ == "__main__":
     from dotenv import load_dotenv
 

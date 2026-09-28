@@ -6,3 +6,5 @@ kargo.db
 uploads/
 .pytest_cache/
 .vercel/
+.vercel
+.env*
