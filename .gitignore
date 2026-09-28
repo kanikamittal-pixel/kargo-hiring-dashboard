@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+kargo.db
+uploads/
+.pytest_cache/

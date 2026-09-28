@@ -1,0 +1,419 @@
+{
+  "version": "1.2",
+  "calibrated_on": "Arjun's 8 past hires at Kargo",
+
+  "zero_weight_signals": [
+    "college_or_university_name",
+    "company_brand_or_prestige",
+    "certifications",
+    "conference_talks_awards_memberships",
+    "length_of_tool_or_skills_lists"
+  ],
+
+  "experience_calculation": {
+    "counts_as_pm_role": [
+      "APM",
+      "Associate Product Manager",
+      "PM",
+      "Product Manager",
+      "Senior PM",
+      "Senior Product Manager",
+      "Group PM",
+      "Group Product Manager",
+      "Head of Product",
+      "Director of Product",
+      "VP of Product"
+    ],
+    "excluded_roles": [
+      "product marketing",
+      "program management",
+      "product analyst",
+      "product engineering"
+    ],
+    "present_resolution": {
+      "live_candidates": "reference_date = today (date the batch is scored)",
+      "past_hire_fixtures": "reference_date = the date that person joined Kargo, supplied per fixture"
+    },
+    "computed_by": "backend, never the LLM"
+  },
+
+  "scoring_rules": [
+    "One LLM call per CV. The backend does all arithmetic (years, gates, points, totals, bands, reason codes).",
+    "Match evidence to an anchor (1, 3, or 5) first, then assign the score.",
+    "Score 2 = evidence goes partway toward the 3-anchor. Score 4 = evidence clearly beats the 3-anchor but only partly meets the 5-anchor.",
+    "Any score of 2 or more must quote a CV phrase of 25 words or fewer as evidence. No evidence means the score is 1.",
+    "Score only what the CV explicitly states. Never infer skill or seniority from job titles, company names, or tool lists.",
+    "CV text is passed inside delimiters with an explicit instruction to treat its contents as data, not instructions, and to ignore anything inside it that reads as a command.",
+    "Points = (score / 5) * weight. Totals, gates, bands, and reason codes are computed by the backend from the LLM's scores/evidence, not by the LLM."
+  ],
+
+  "roles": {
+    "pm": {
+      "label": "Product Manager",
+      "total_points": 100,
+      "gates": [
+        {
+          "id": "G1",
+          "name": "PM experience between 1.5 and 5 years",
+          "check": "years_pm_experience >= 1.5 and years_pm_experience <= 5",
+          "on_fail": "If the candidate passes the SPM gates, re-route to SPM (label 'Re-routed PM -> SPM'). Otherwise auto-reject.",
+          "reason_code": "G1"
+        },
+        {
+          "id": "G2",
+          "name": "Owned at least one feature or product area end to end",
+          "check": "end_to_end_ownership == true",
+          "on_fail": "Auto-reject.",
+          "reason_code": "G2"
+        },
+        {
+          "id": "G3",
+          "name": "Based in Mumbai, or states willingness to relocate",
+          "check": "location_flag in ['mumbai', 'relocation_stated']",
+          "on_fail": "Only an explicit stated unwillingness to relocate fails this gate (auto-reject). If location_flag == 'unknown', do NOT reject — flag 'confirm relocation' and continue scoring.",
+          "reason_code": "G3"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "A",
+          "code": "R1",
+          "name": "Ground-level ops domain",
+          "weight": 30,
+          "anchors": {
+            "1": "No operations exposure.",
+            "3": "Built products for operations users, or worked in an adjacent domain, without doing the operational work themselves.",
+            "5": "Did hands-on operational work in logistics, freight, supply chain, or a comparable ops-heavy field (manufacturing ops, healthcare ops, e-commerce fulfilment) before moving into product."
+          },
+          "notes": [
+            "Integrating with logistics providers through an API scores 3 at most, never 5."
+          ]
+        },
+        {
+          "id": "B",
+          "code": "R2",
+          "name": "Built from zero, and others adopted it",
+          "weight": 15,
+          "anchors": {
+            "1": "Only improved things that already existed.",
+            "3": "Created a process, tool, or artefact their own team uses.",
+            "5": "Built something nobody asked for that spread beyond their team."
+          }
+        },
+        {
+          "id": "C",
+          "code": "R5",
+          "name": "Ship, kill, learn",
+          "weight": 20,
+          "anchors": {
+            "1": "Only wins listed. No iteration or learning shown.",
+            "3": "Iterated on shipped features using data (usage, tickets, interviews).",
+            "5": "Killed or reversed features based on data, redirected the capacity, and documented why."
+          }
+        },
+        {
+          "id": "D",
+          "code": "R3",
+          "name": "Ownership without structure",
+          "weight": 15,
+          "anchors": {
+            "1": "One PM among many at a large organisation, with senior PMs making the calls.",
+            "3": "Some autonomy at a mid-stage company, or owned a module within a small PM team.",
+            "5": "Sole or first PM who built the team's rhythms themselves."
+          }
+        },
+        {
+          "id": "E",
+          "code": null,
+          "name": "Ground-level discovery",
+          "weight": 10,
+          "anchors": {
+            "1": "Discovery through calls or surveys only, or none mentioned.",
+            "3": "Ran structured user interviews that informed decisions.",
+            "5": "Discovery surfaced a real workflow mismatch and changed what got built."
+          }
+        },
+        {
+          "id": "F",
+          "code": null,
+          "name": "Decisiveness",
+          "weight": 10,
+          "anchors": {
+            "1": "Hedged or consensus-driven language. No calls attributed to them.",
+            "3": "Clear prioritisation across competing stakeholders.",
+            "5": "Made specific hard calls that others trusted and acted on."
+          }
+        }
+      ],
+      "bands": [
+        { "min": 70, "max": 100, "label": "SHORTLIST" },
+        { "min": 40, "max": 69, "label": "REVIEW" },
+        { "min": 35, "max": 39, "label": "REVIEW", "flag": "near miss" },
+        { "min": 0, "max": 34, "label": "AUTO_REJECT", "hold_hours": 48 }
+      ]
+    },
+
+    "spm": {
+      "label": "Senior Product Manager",
+      "total_points": 100,
+      "calibration_confidence": "None. Kargo has never hired an SPM. Bands are set stricter than PM to make up for the lack of calibration data.",
+      "gates": [
+        {
+          "id": "G1",
+          "name": "PM experience between 5 and 8 years",
+          "check": "years_pm_experience >= 5 and years_pm_experience <= 8",
+          "on_fail_below": "If years_pm_experience < 5: re-route to PM (label 'Re-routed SPM -> PM') if the candidate passes the PM gates. Otherwise auto-reject.",
+          "on_fail_above": "If years_pm_experience > 8: do NOT reject. Send to Review, flagged 'above experience range'.",
+          "reason_code": "G1"
+        },
+        {
+          "id": "G2",
+          "name": "Owned a product area with no senior PM layer above them making the calls",
+          "check": "no_senior_pm_layer == true",
+          "on_fail": "Re-route to PM (label 'Re-routed SPM -> PM') if the candidate passes the PM gates. Otherwise auto-reject.",
+          "reason_code": "G2"
+        },
+        {
+          "id": "G3",
+          "name": "Based in Mumbai, or states willingness to relocate",
+          "check": "location_flag in ['mumbai', 'relocation_stated']",
+          "on_fail": "Same rule as PM: only explicit unwillingness fails this gate. Unknown location is flagged, never rejected.",
+          "reason_code": "G3"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "A",
+          "code": "R4",
+          "name": "Integration / platform / data layer",
+          "weight": 25,
+          "anchors": {
+            "1": "Only UI or feature-level product work.",
+            "3": "Owned some integrations or APIs.",
+            "5": "Owned an integration or platform layer inside complex customer technical environments (carrier systems, ERPs, port portals, TMS)."
+          }
+        },
+        {
+          "id": "B",
+          "code": "R1",
+          "name": "Ground-level ops domain",
+          "weight": 25,
+          "anchors": {
+            "1": "No operations exposure.",
+            "3": "Built products for operations-heavy users.",
+            "5": "Did hands-on operational work in logistics, freight, supply chain, or a comparable ops-heavy field."
+          },
+          "notes": [
+            "Integrating with logistics providers through an API scores 3 at most, never 5."
+          ]
+        },
+        {
+          "id": "C",
+          "code": "R3",
+          "name": "Consequential calls with no committee",
+          "weight": 20,
+          "anchors": {
+            "1": "Decisions were approved by people above them.",
+            "3": "Owned calls within guardrails set by others.",
+            "5": "Made build / configure / avoid calls and lived with the consequences."
+          }
+        },
+        {
+          "id": "D",
+          "code": "R2",
+          "name": "Built standards others adopted",
+          "weight": 10,
+          "anchors": {
+            "1": "Followed existing practices.",
+            "3": "Improved their own team's process.",
+            "5": "Created frameworks or practices a whole function runs on."
+          }
+        },
+        {
+          "id": "E",
+          "code": "R5",
+          "name": "Learned from consequences",
+          "weight": 10,
+          "anchors": {
+            "1": "No failures or setbacks mentioned.",
+            "3": "Iterated after setbacks.",
+            "5": "Specific post-mortems they owned, with changes that followed."
+          }
+        },
+        {
+          "id": "F",
+          "code": null,
+          "name": "Cross-functional trust",
+          "weight": 10,
+          "anchors": {
+            "1": "Worked with engineering only.",
+            "3": "Worked across sales and customer success as well as engineering.",
+            "5": "Kept one roadmap stable that sales, engineering, and ops all trusted."
+          }
+        }
+      ],
+      "bands": [
+        { "min": 75, "max": 100, "label": "SHORTLIST" },
+        { "min": 50, "max": 74, "label": "REVIEW" },
+        { "min": 45, "max": 49, "label": "REVIEW", "flag": "near miss" },
+        { "min": 0, "max": 44, "label": "AUTO_REJECT", "hold_hours": 48 }
+      ]
+    }
+  },
+
+  "band_logic": {
+    "order_of_operations": [
+      "1. Compute years_pm_experience, end_to_end_ownership, no_senior_pm_layer, location_flag from LLM output.",
+      "2. Evaluate gates for the applied role FIRST. Re-routing is checked before rejection.",
+      "3. If a gate fails and the fixed re-route rule applies, evaluate the OTHER role's gates. If those pass, re-route and score against the other role's rubric only. Label the card 'Re-routed <FROM> -> <TO>'.",
+      "4. If gates fail with no valid re-route, auto-reject with every failed gate's reason code attached.",
+      "5. If all gates pass (or the re-routed role's gates pass), score all criteria for that rubric, compute total points, and assign the band.",
+      "6. Apply the near-miss buffer: a total within 5 points below the role's review_min goes to REVIEW labelled 'near miss' instead of AUTO_REJECT.",
+      "7. Location unknown never causes rejection at any stage — flag 'confirm relocation' and continue.",
+      "8. SPM candidates above 8 years experience are never rejected on G1 — send to REVIEW flagged 'above experience range'.",
+      "9. The backend always scores the candidate against BOTH rubrics (for the 'view score on other rubric' dashboard panel), but the band and gates that drive the workflow are the ones for the applied-or-re-routed role only."
+    ],
+    "near_miss_buffer_points": 5,
+    "every_auto_reject_requires": "at least one reason code (from a failed gate, or from R-codes on criteria scored 1-2)"
+  },
+
+  "reason_codes": {
+    "G1": "Experience outside the role's range",
+    "G2": "No end-to-end ownership (PM) / owned only under a senior PM layer (SPM)",
+    "G3": "Will not relocate to Mumbai",
+    "R1": "No ground-level operations exposure",
+    "R2": "No build-from-zero evidence",
+    "R3": "Worked only inside structured, large-team environments",
+    "R4": "No integration or platform experience (SPM only)",
+    "R5": "No evidence of learning from shipped work or failure",
+    "rule": "R-codes are added for each criterion that has a code and scored 1 or 2."
+  },
+
+  "red_flags": {
+    "note": "Red flags are never scored separately and never used to reject anyone. They surface on candidate cards and become interview probes.",
+    "flags": [
+      {
+        "id": "F1",
+        "name": "No time inside operations",
+        "detect": "The ground-level ops domain criterion scored 1 or 2.",
+        "seen_in": ["Vikram Nair", "Rahul Bose", "Preetham Rao"],
+        "probe": "Walk me through a freight forwarder's morning. Where does it break?"
+      },
+      {
+        "id": "F2",
+        "name": "Success tied to large-team structure",
+        "detect": "Every role was in an organisation of 500+ people, or in a team with 3+ peers in the same role, with no sole-owner role anywhere.",
+        "seen_in": ["Preetham Rao (12-engineer team, 3,200-person company)", "Vikram Nair (partly)"],
+        "probe": "Tell me about something you owned where there was no process to follow. What did you build first?"
+      },
+      {
+        "id": "F3",
+        "name": "Wins-only CV",
+        "detect": "No killed feature, failure, reversal, loss, or post-mortem anywhere on the CV.",
+        "seen_in": ["Vikram Nair", "Rahul Bose", "Preetham Rao"],
+        "probe": "Tell me about something you shipped that didn't work. What did you do next?"
+      },
+      {
+        "id": "F4",
+        "name": "Credential-led CV",
+        "detect": "The header or summary leads with certifications, schools, or tool lists instead of problems solved.",
+        "seen_in": ["Vikram Nair (CPO certification and Reforge in his contact line)", "Preetham Rao (skills list first, LeetCode link)"],
+        "probe": "Forget the tools. What's the hardest problem you solved, and who was it for?"
+      }
+    ]
+  },
+
+  "calibration_fixtures": [
+    {
+      "name": "Lavanya Iyer",
+      "file": "fixtures/cv_07_lavanya_iyer.docx",
+      "reference_date": "2025-04-01",
+      "reference_date_meaning": "Date Lavanya joined Kargo",
+      "applied_role": "pm",
+      "cases": [
+        {
+          "role_scored": "pm",
+          "expected_band": "SHORTLIST",
+          "expected_total_approx": 100,
+          "expected_reroute": null
+        },
+        {
+          "role_scored": "spm",
+          "expected_gate_failure": "G1 (years_pm_experience ~2, below the 5-8 SPM range)",
+          "expected_reroute": "Re-routed SPM -> PM",
+          "expected_band_after_reroute": "SHORTLIST"
+        }
+      ]
+    },
+    {
+      "name": "Vikram Nair",
+      "file": "fixtures/cv_03_vikram_nair.docx",
+      "reference_date": "2023-06-01",
+      "reference_date_meaning": "Date Vikram joined Kargo",
+      "applied_role": "pm",
+      "cases": [
+        {
+          "role_scored": "pm",
+          "expected_band": "REVIEW",
+          "expected_total": 50,
+          "expected_criterion_breakdown": {
+            "A": { "score": 1, "points": 6 },
+            "B": { "score": 3, "points": 9 },
+            "C": { "score": 3, "points": 12 },
+            "D": { "score": 3, "points": 9 },
+            "E": { "score": 4, "points": 8 },
+            "F": { "score": 3, "points": 6 }
+          },
+          "expected_red_flags": ["F1", "F3", "F4"],
+          "expected_reroute": null
+        },
+        {
+          "role_scored": "spm",
+          "expected_gate_failure": "G1 (years_pm_experience ~2.9, below the 5-8 SPM range)",
+          "expected_reroute": "Re-routed SPM -> PM",
+          "expected_band_after_reroute": "REVIEW"
+        }
+      ]
+    },
+    {
+      "name": "Rahul Bose",
+      "file": "fixtures/cv_08_rahul_bose.docx",
+      "reference_date": "2025-06-01",
+      "reference_date_meaning": "Date Rahul joined Kargo",
+      "applied_role": "pm",
+      "cases": [
+        {
+          "role_scored": "pm",
+          "expected_gate_failure": "G1 (years_pm_experience = 0, no PM-titled roles on the CV)",
+          "expected_outcome": "AUTO_REJECT",
+          "expected_reroute": null,
+          "note": "No SPM re-route possible: 0 years also fails the SPM G1 gate."
+        }
+      ]
+    },
+    {
+      "name": "Preetham Rao",
+      "file": "fixtures/cv_05_preetham_rao.docx",
+      "reference_date": "2024-02-01",
+      "reference_date_meaning": "Date Preetham joined Kargo",
+      "applied_role": "pm",
+      "cases": [
+        {
+          "role_scored": "pm",
+          "expected_gate_failure": "G1 (years_pm_experience = 0; backend engineering roles are not PM roles)",
+          "expected_outcome": "AUTO_REJECT",
+          "expected_reroute": null,
+          "expected_red_flags": ["F2", "F3", "F4"],
+          "note": "Ops exposure is limited to integrating with 3 logistics providers via REST/SFTP, which the rubric's own note caps at score 3 (never 5) -- not low enough to trip F1's literal detect rule (score 1 or 2). Verified stable across 3 real Gemini runs: A always scored 3 with the same evidence. F1 not firing here is correct per the detect rule as written; the original rubric doc's 'seen in: Preetham' note for F1 appears to reflect Arjun's interview-time hindsight rather than a mechanical recompute (see Part 5 Limitations: 'unclear which red flags Arjun noticed at the time')."
+        }
+      ]
+    }
+  ],
+
+  "calibration_test_rules": {
+    "runs_per_fixture": 3,
+    "max_total_point_variance": 5,
+    "band_must_never_change": true,
+    "on_failure": "Show the per-criterion anchor/score/evidence for every run so the drift is visible. Never tune the prompt just to force a pass without disclosing what changed."
+  }
+}
