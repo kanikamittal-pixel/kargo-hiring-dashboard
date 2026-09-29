@@ -751,17 +751,30 @@ async function renderDecisionLog() {
 
 // ---------- All Candidates (debug) ----------
 
+const PARSE_STATUS_LABEL = { ok: "Parsed", duplicate: "Duplicate", needs_manual_review: "Parse failed" };
+const SCORE_STATUS_LABEL = { not_scored: "Not scored yet", scored: "Scored", needs_manual_review: "Needs review" };
+
+function statusPill(text, kind) {
+  return el("span", { class: `badge ${kind}` }, text);
+}
+
+function contactField(label, value) {
+  if (!value) return null;
+  return el("div", { class: "kv-row" }, [el("span", { class: "kv-label" }, label), el("span", {}, value)]);
+}
+
 async function renderAllCandidates() {
   const root = document.getElementById("tab-allcandidates");
   root.innerHTML = "";
-  root.appendChild(el("h2", {}, "Candidates"));
+  root.appendChild(el("h2", {}, "All candidates"));
+  root.appendChild(el("p", { class: "muted" }, "Every resume uploaded so far, whatever its current stage. Click a row for details."));
 
   const roleSelect = el("select", {}, [
-    el("option", { value: "All" }, "All"), el("option", { value: "PM" }, "PM"), el("option", { value: "SPM" }, "SPM"),
+    el("option", { value: "All" }, "All roles"), el("option", { value: "PM" }, "PM"), el("option", { value: "SPM" }, "SPM"),
   ]);
   const listDiv = el("div", {});
   roleSelect.addEventListener("change", () => loadList());
-  root.appendChild(el("div", { class: "field" }, [el("label", {}, "Filter by role"), roleSelect]));
+  root.appendChild(el("div", { class: "field" }, [el("label", {}, "Filter by applied role"), roleSelect]));
   root.appendChild(listDiv);
 
   async function loadList() {
@@ -771,22 +784,51 @@ async function renderAllCandidates() {
       listDiv.appendChild(el("div", { class: "banner info" }, "No candidates uploaded yet."));
       return;
     }
+
+    listDiv.appendChild(el("div", { class: "candidate-row header" }, [
+      "Name", "Applied as", "Parse", "Scoring", "Band",
+    ].map((h) => el("span", {}, h))));
+
     candidates.forEach((c) => {
       const card = el("div", { class: "card" });
-      const header = el("div", { class: "card-header", onclick: () => card.classList.toggle("open") }, [
-        el("span", {}, `${c.id} -- ${c.name || "(name not detected)"} -- ${c.applied_role} -- ${c.parse_status}`),
-        el("span", {}, "⌄"),
+      const parseKind = c.parse_status === "ok" ? "shortlist" : c.parse_status === "duplicate" ? "review" : "auto_reject";
+      const scoreKind = c.score_status === "scored" ? "shortlist" : c.score_status === "needs_manual_review" ? "auto_reject" : "review";
+
+      const row = el("div", { class: "candidate-row" }, [
+        el("span", { class: "kv-name" }, c.name || "Unnamed candidate"),
+        el("span", { class: "tag" }, c.applied_role),
+        statusPill(PARSE_STATUS_LABEL[c.parse_status] || c.parse_status, parseKind),
+        statusPill(SCORE_STATUS_LABEL[c.score_status] || c.score_status, scoreKind),
+        el("span", { class: "tag" }, c.final_band ? c.final_band.replace("_", " ") : "-"),
       ]);
+      row.addEventListener("click", () => card.classList.toggle("open"));
+
       const body = el("div", { class: "card-body" }, [
-        el("h4", {}, "Extracted fields"),
-        el("pre", {}, JSON.stringify({
-          email: c.email, phone: c.phone, linkedin: c.linkedin, city: c.city,
-          location_flag: c.location_flag, source_file: c.source_file, is_duplicate_of: c.is_duplicate_of,
-        }, null, 2)),
-        el("h4", {}, "Redacted text sent to the LLM"),
-        el("textarea", { rows: "12", readonly: "true" }, c.redacted_text || ""),
+        el("h4", {}, "Contact"),
+        el("div", { class: "kv-list" }, [
+          contactField("Email", c.email),
+          contactField("Phone", c.phone),
+          contactField("LinkedIn", c.linkedin),
+          contactField("City", c.city),
+          contactField("Location flag", c.location_flag),
+          contactField("Source file", c.source_file),
+          c.is_duplicate_of ? contactField("Duplicate of", c.is_duplicate_of) : null,
+        ].filter(Boolean)),
       ]);
-      card.appendChild(header);
+
+      const toggleBtn = el("button", {
+        onclick: (e) => {
+          e.stopPropagation();
+          const shown = redactedBlock.style.display !== "none";
+          redactedBlock.style.display = shown ? "none" : "block";
+          toggleBtn.textContent = shown ? "Show redacted text sent to the LLM" : "Hide redacted text";
+        },
+      }, "Show redacted text sent to the LLM");
+      const redactedBlock = el("textarea", { rows: "12", readonly: "true", style: "display:none;margin-top:10px;" }, c.redacted_text || "");
+      body.appendChild(toggleBtn);
+      body.appendChild(redactedBlock);
+
+      card.appendChild(row);
       card.appendChild(body);
       listDiv.appendChild(card);
     });
