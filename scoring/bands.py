@@ -82,6 +82,28 @@ def reason_codes_for(rubrics: dict, per_criterion: list[dict], failed_gate_ids: 
     return codes
 
 
+BAND_RANK = {"SHORTLIST": 0, "REVIEW": 1, "AUTO_REJECT": 2}
+BETTER_FIT_MARGIN = 10  # points; only flag a same-band tie-break if the gap is this large
+
+
+def _better_fit_note(scored_role: str, scored_view: dict, other_role: str, other_gates: dict, other_view: dict) -> str | None:
+    """Only meaningful when the CURRENT applied role's gates already passed -- if they'd
+    failed, re-routing already moved the candidate to whichever role is actually eligible."""
+    if not all(g["passed"] for g in other_gates.values()):
+        return None
+    scored_rank = BAND_RANK.get(scored_view["band"], 2)
+    other_rank = BAND_RANK.get(other_view["band"], 2)
+    is_better_band = other_rank < scored_rank
+    is_same_band_but_higher = other_rank == scored_rank and (other_view["total_points"] - scored_view["total_points"]) >= BETTER_FIT_MARGIN
+    if is_better_band or is_same_band_but_higher:
+        return (
+            f"Scored higher as {other_role.upper()} ({other_view['total_points']} pts, {other_view['band']}) "
+            f"than as {scored_role.upper()} ({scored_view['total_points']} pts, {scored_view['band']}) -- "
+            f"consider evaluating for {other_role.upper()} instead."
+        )
+    return None
+
+
 def _view_for(rubrics: dict, role_key: str, gates: dict, total: float, per_crit: list[dict]) -> dict:
     band_label, band_flag = band_for_points(rubrics, role_key, total)
     g1_flag = gates.get("G1", {}).get("flag")
@@ -129,6 +151,7 @@ def decide(rubrics: dict, years: float, ownership, location_flag: str, pm_scores
                 "reroute_label": None,
                 "band": "AUTO_REJECT",
                 "band_flag": None,
+                "better_fit_note": None,
                 "hold_hours": 48,
                 "total_points": total_by_role[applied_role],
                 "criteria": per_crit_by_role[applied_role],
@@ -146,7 +169,12 @@ def decide(rubrics: dict, years: float, ownership, location_flag: str, pm_scores
     per_crit = per_crit_by_role[scored_role]
 
     scored_view = _view_for(rubrics, scored_role, scored_gates, total, per_crit)
+    other_view = _view_for(rubrics, other_role, other_gates, total_by_role[other_role], per_crit_by_role[other_role])
     g3_flag = scored_gates.get("G3", {}).get("flag")
+
+    better_fit_note = None
+    if reroute_label is None:  # only meaningful when we didn't already re-route to the eligible role
+        better_fit_note = _better_fit_note(scored_role, scored_view, other_role, other_gates, other_view)
 
     return {
         "applied_role": applied_role,
@@ -155,11 +183,12 @@ def decide(rubrics: dict, years: float, ownership, location_flag: str, pm_scores
         "band": scored_view["band"],
         "band_flag": scored_view["band_flag"],
         "location_flag_note": g3_flag,
+        "better_fit_note": better_fit_note,
         "hold_hours": 48 if scored_view["band"] == "AUTO_REJECT" else None,
         "total_points": total,
         "criteria": per_crit,
         "gates": scored_gates,
         "reason_codes": scored_view["reason_codes"],
         "years_pm_experience": years,
-        "other_role_view": _view_for(rubrics, other_role, other_gates, total_by_role[other_role], per_crit_by_role[other_role]),
+        "other_role_view": other_view,
     }

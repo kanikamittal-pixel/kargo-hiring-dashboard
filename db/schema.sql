@@ -66,3 +66,4 @@ ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_subject TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_body TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_generated_at TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_sent_at TEXT;
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS better_fit_note TEXT;

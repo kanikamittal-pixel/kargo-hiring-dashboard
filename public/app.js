@@ -383,6 +383,10 @@ function candidateCard(candidate, rubrics, scoresCache, onChange) {
     body.appendChild(el("div", { class: "banner info" }, `Location: ${candidate.location_flag_note}`));
   }
 
+  if (candidate.better_fit_note) {
+    body.appendChild(el("div", { class: "banner warn" }, `Best fit check: ${candidate.better_fit_note}`));
+  }
+
   body.appendChild(el("h4", {}, "Gates"));
   body.appendChild(gatesLine(score.gates, candidate.years_pm_experience));
 

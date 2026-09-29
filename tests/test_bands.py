@@ -167,3 +167,63 @@ def test_near_miss_buffer():
     assert 35 <= result["total_points"] <= 39
     assert result["band"] == "REVIEW"
     assert result["band_flag"] == "near miss"
+
+
+def test_better_fit_note_when_other_role_scores_higher_band():
+    # years=5.0 sits on the boundary shared by both gates (PM: 1.5-5, SPM: 5-8), so both
+    # roles' gates pass -- no re-route is triggered, but SPM scores a clearly better band.
+    pm_scores = {"A": crit(1), "B": crit(3), "C": crit(3), "D": crit(3), "E": crit(4), "F": crit(3)}  # 50 -> REVIEW
+    spm_scores = full_criteria({"A": 5, "B": 5, "C": 5, "D": 5, "E": 5, "F": 5})  # 100 -> SHORTLIST
+
+    result = bands.decide(
+        rubrics=RUBRICS,
+        years=5.0,
+        ownership=ownership(end_to_end=True, no_senior_layer=True),
+        location_flag="mumbai",
+        pm_scores=pm_scores,
+        spm_scores=spm_scores,
+        applied_role="pm",
+    )
+
+    assert result["scored_role"] == "pm"
+    assert result["reroute_label"] is None
+    assert result["band"] == "REVIEW"
+    assert result["better_fit_note"] is not None
+    assert "SPM" in result["better_fit_note"]
+
+
+def test_no_better_fit_note_when_other_role_gates_fail():
+    pm_scores = {"A": crit(1), "B": crit(3), "C": crit(3), "D": crit(3), "E": crit(4), "F": crit(3)}
+    spm_scores = full_criteria({"A": 5, "B": 5, "C": 5, "D": 5, "E": 5, "F": 5})
+
+    result = bands.decide(
+        rubrics=RUBRICS,
+        years=2.9,  # fails SPM's 5-8y gate, so SPM isn't actually a viable alternative
+        ownership=ownership(end_to_end=True, no_senior_layer=True),
+        location_flag="mumbai",
+        pm_scores=pm_scores,
+        spm_scores=spm_scores,
+        applied_role="pm",
+    )
+
+    assert result["scored_role"] == "pm"
+    assert result["better_fit_note"] is None
+
+
+def test_no_better_fit_note_when_margin_too_small():
+    pm_scores = {"A": crit(1), "B": crit(3), "C": crit(3), "D": crit(3), "E": crit(4), "F": crit(3)}  # 50
+    spm_scores = full_criteria({"A": 3, "B": 3, "C": 3, "D": 3, "E": 3, "F": 2})  # 58, same REVIEW band, <10pt gap
+
+    result = bands.decide(
+        rubrics=RUBRICS,
+        years=5.0,
+        ownership=ownership(end_to_end=True, no_senior_layer=True),
+        location_flag="mumbai",
+        pm_scores=pm_scores,
+        spm_scores=spm_scores,
+        applied_role="pm",
+    )
+
+    assert result["band"] == "REVIEW"
+    assert result["other_role_view"]["band"] == "REVIEW"
+    assert result["better_fit_note"] is None
