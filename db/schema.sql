@@ -29,10 +29,6 @@ CREATE TABLE IF NOT EXISTS candidates (
     scored_at TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_email
-    ON candidates(email)
-    WHERE email IS NOT NULL AND is_duplicate_of IS NULL;
-
 CREATE TABLE IF NOT EXISTS scores (
     id SERIAL PRIMARY KEY,
     candidate_id TEXT NOT NULL,
