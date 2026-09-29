@@ -41,6 +41,48 @@ SECTION_HEADER_WORDS = {
 NAME_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z.'\-]*(?:\s+[A-Za-z][A-Za-z.'\-]*){1,3}$")
 
 
+def _collapse_adjacent_duplicate_letters(s: str) -> str:
+    out = []
+    for ch in s:
+        if out and out[-1].lower() == ch.lower():
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
+def _word_looks_corrupted(word: str) -> bool:
+    letters = [c for c in word if c.isalpha()]
+    if len(letters) < 4:
+        return False
+    # Signal 1: doubled letters (both copies same case) collapse a lot under dedup.
+    collapsed = _collapse_adjacent_duplicate_letters("".join(letters))
+    if len(collapsed) <= len(letters) * 0.65:
+        return True
+    # Signal 2: interleaved-but-mismatched-case doubling doesn't collapse as cleanly,
+    # but leaves far more capitals scattered through the word than a real name ever
+    # would -- a normal word has at most its first letter capitalized (plus rare cases
+    # like "McKinsey" or "O'Brien" with one extra), OR is written fully in caps as a
+    # deliberate style ("RAHUL BOSE") -- exempt that case, since it's uniform, not
+    # scattered. A high interior-capital ratio in a mixed-case word is the same
+    # underlying artifact showing up differently.
+    if "".join(letters).isupper():
+        return False
+    interior = letters[1:]
+    if not interior:
+        return False
+    interior_upper_ratio = sum(1 for c in interior if c.isupper()) / len(interior)
+    return interior_upper_ratio > 0.3
+
+
+def _looks_corrupted(line: str) -> bool:
+    """Detects a specific PDF text-extraction artifact: some resume templates fake a
+    bold/styled header by printing it twice at near-identical coordinates, which naive
+    extraction interleaves character-by-character into garbage, e.g. 'RROohHaAnN' for
+    'Rohan'. Checked per word since the two overlapping text layers don't always
+    produce the same corruption pattern in every word of the line."""
+    return any(_word_looks_corrupted(w) for w in line.split())
+
+
 def _looks_like_name(line: str) -> bool:
     line = line.strip()
     if not (3 <= len(line) <= 50):
@@ -50,7 +92,9 @@ def _looks_like_name(line: str) -> bool:
     lowered = line.lower()
     if lowered in SECTION_HEADER_WORDS or "http" in lowered or "linkedin.com" in lowered or "github.com" in lowered:
         return False
-    return bool(NAME_LINE_RE.match(line))
+    if not NAME_LINE_RE.match(line):
+        return False
+    return not _looks_corrupted(line)
 
 
 def _extract_name(lines: list[str], full_text: str) -> str | None:
@@ -66,11 +110,22 @@ def _extract_name(lines: list[str], full_text: str) -> str | None:
         if prefix_lines:
             candidate = prefix_lines[-1].strip()
             words = candidate.split()
-            if 1 <= len(words) <= 4 and not any(ch.isdigit() for ch in candidate) and all(w[0].isupper() for w in words):
+            if (
+                1 <= len(words) <= 4
+                and not any(ch.isdigit() for ch in candidate)
+                and all(w[0].isupper() for w in words)
+                and not _looks_corrupted(candidate)
+            ):
                 return candidate
 
     # Last resort: the original bare heuristic -- still better than leaving it blank.
-    if lines and "@" not in lines[0] and not any(ch.isdigit() for ch in lines[0]) and len(lines[0]) < 60:
+    if (
+        lines
+        and "@" not in lines[0]
+        and not any(ch.isdigit() for ch in lines[0])
+        and len(lines[0]) < 60
+        and not _looks_corrupted(lines[0])
+    ):
         return lines[0]
     return None
 

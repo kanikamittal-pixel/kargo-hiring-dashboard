@@ -23,7 +23,11 @@ def parse_file(filename: str, file_bytes: bytes) -> str:
 def _parse_pdf(file_bytes: bytes) -> str:
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            pages = [page.extract_text() or "" for page in pdf.pages]
+            # Some resume templates fake bold/styled headers by printing text twice at
+            # near-identical coordinates; naive extraction interleaves the two overlapping
+            # copies into garbage ("Rohan" -> "RROohHaAnN"). dedupe_chars collapses
+            # same-text characters stacked within a small tolerance before extraction.
+            pages = [page.dedupe_chars(tolerance=1).extract_text() or "" for page in pdf.pages]
         text = "\n".join(pages).strip()
     except Exception as e:
         raise ParseError(f"Failed to parse PDF: {e}") from e
