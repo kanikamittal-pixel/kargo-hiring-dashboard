@@ -1,4 +1,4 @@
-from ingestion.redact import _looks_corrupted, extract_contact_info
+from ingestion.redact import _looks_corrupted, _name_from_filename, extract_contact_info
 
 
 def test_detects_doubled_letter_corruption():
@@ -28,3 +28,21 @@ def test_extract_contact_info_drops_corrupted_name_instead_of_using_it():
     contact = extract_contact_info(corrupted_text)
     assert contact["name"] is None
     assert contact["email"] == "squad_1@pg27.mesaschool.co"
+
+
+def test_filename_fallback_used_when_body_extraction_fails():
+    corrupted_text = (
+        "RROohHaAnN M MehEtHaTA\n"
+        "Strategy & Operations Leader\n"
+        "+91 9820928 210123 4151345 squad_1@pg27.mesaschool.co rohan-mehta\n"
+    )
+    contact = extract_contact_info(corrupted_text, filename="01_rohan_mehta.pdf")
+    assert contact["name"] == "Rohan Mehta"
+
+
+def test_name_from_filename():
+    assert _name_from_filename("01_rohan_mehta.pdf") == "Rohan Mehta"
+    assert _name_from_filename("John Smith Resume.pdf") == "John Smith"
+    assert _name_from_filename("Resume_Final.pdf") is None
+    assert _name_from_filename("resume2024.pdf") is None
+    assert _name_from_filename("candidate123.pdf") is None

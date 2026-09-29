@@ -130,7 +130,26 @@ def _extract_name(lines: list[str], full_text: str) -> str | None:
     return None
 
 
-def extract_contact_info(text: str) -> dict:
+NAME_STOPWORDS = {"resume", "cv", "curriculum", "vitae", "final", "updated", "latest", "copy"}
+
+
+def _name_from_filename(filename: str) -> str | None:
+    """Last-resort fallback when the document body has no usable name (e.g. the header
+    extracted corrupted -- see _looks_corrupted). Many resumes are literally named
+    "firstname_lastname.pdf", which sidesteps whatever went wrong in the PDF/DOCX body."""
+    stem = filename.rsplit(".", 1)[0]
+    stem = re.sub(r"^\d+[_\-\s]*", "", stem)  # drop leading numbering, e.g. "01_"
+    words = [w for w in re.split(r"[_\-\s]+", stem) if w]
+    words = [w for w in words if w.lower() not in NAME_STOPWORDS]
+    if not (2 <= len(words) <= 4):
+        return None
+    if any(any(ch.isdigit() for ch in w) for w in words):
+        return None
+    candidate = " ".join(w.capitalize() for w in words)
+    return candidate if not _looks_corrupted(candidate) else None
+
+
+def extract_contact_info(text: str, filename: str | None = None) -> dict:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     email_match = EMAIL_RE.search(text)
     email = email_match.group(0) if email_match else None
@@ -142,6 +161,8 @@ def extract_contact_info(text: str) -> dict:
     linkedin = linkedin_match.group(0) if linkedin_match else None
 
     name = _extract_name(lines, text)
+    if not name and filename:
+        name = _name_from_filename(filename)
 
     city = None
     head_text = "\n".join(lines[:5]).lower()

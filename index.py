@@ -105,7 +105,7 @@ def upload():
 
         try:
             raw_text = parse_file(f.filename, file_bytes)
-            contact = extract_contact_info(raw_text)
+            contact = extract_contact_info(raw_text, filename=f.filename)
             location_flag = compute_location_flag(contact.get("city"), raw_text)
             redacted = redact_text(raw_text, contact)
 
