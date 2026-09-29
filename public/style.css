@@ -231,8 +231,9 @@ tr:last-child td { border-bottom: none; }
 
 .row-actions { display: flex; gap: 10px; margin-top: 14px; }
 
-.log-row { display: grid; grid-template-columns: 2.5fr 1fr 1fr 2fr 1.5fr; gap: 10px; align-items: center; padding: 10px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
-.log-row.header { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.02em; }
+.log-row { display: grid; grid-template-columns: 1.6fr 0.7fr 0.6fr 2.6fr 1fr 1.3fr; gap: 12px; align-items: start; padding: 12px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.log-row.header { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.02em; align-items: center; }
+.log-row span { overflow-wrap: break-word; }
 
 /* Decision log timeline */
 .timeline { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--panel); }

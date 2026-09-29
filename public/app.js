@@ -273,7 +273,7 @@ function computeSummary(candidates, roleKey) {
   };
 }
 
-function renderSummaryBar(container, candidates, roleKey, roleLabel) {
+function renderSummaryBar(container, candidates, roleKey, roleLabel, rubrics) {
   const s = computeSummary(candidates, roleKey);
   container.appendChild(el("h3", {}, `${roleLabel} summary`));
   const grid = el("div", { class: "summary-bar" });
@@ -286,8 +286,12 @@ function renderSummaryBar(container, candidates, roleKey, roleLabel) {
     ]));
   });
   container.appendChild(grid);
+
+  const reasonText = s.most_common_reason_code === "-" ? "-" : reasonCodeText(rubrics, s.most_common_reason_code);
+  const flagDef = rubrics.red_flags.flags.find((f) => f.id === s.most_common_red_flag);
+  const flagText = s.most_common_red_flag === "-" ? "-" : (flagDef ? `${s.most_common_red_flag} (${flagDef.name})` : s.most_common_red_flag);
   container.appendChild(el("div", { class: "summary-caption" },
-    `Most common reason code: ${s.most_common_reason_code} · Most common red flag: ${s.most_common_red_flag}`));
+    `Most common reason code: ${reasonText} · Most common red flag: ${flagText}`));
 }
 
 // ---------- Band reasoning (ported from ui/cards.py) ----------
@@ -545,8 +549,8 @@ async function renderBandTab(tabName, band) {
   root.innerHTML = "";
   const [rubrics, candidates] = await Promise.all([getRubrics(), api("/api/candidates")]);
 
-  renderSummaryBar(root, candidates, "pm", "PM");
-  renderSummaryBar(root, candidates, "spm", "SPM");
+  renderSummaryBar(root, candidates, "pm", "PM", rubrics);
+  renderSummaryBar(root, candidates, "spm", "SPM", rubrics);
   root.appendChild(el("hr"));
 
   const matching = candidates.filter((c) => c.final_band === band);
@@ -575,6 +579,16 @@ async function getRubrics() {
 
 // ---------- Auto-Reject Log ----------
 
+function reasonCodeText(rubrics, code) {
+  const desc = rubrics.reason_codes && rubrics.reason_codes[code];
+  return desc ? `${code} (${desc})` : code;
+}
+
+function reasonCodesLine(rubrics, codes) {
+  if (!codes || !codes.length) return "-";
+  return codes.map((c) => reasonCodeText(rubrics, c)).join("; ");
+}
+
 async function renderAutoRejectLog() {
   const root = document.getElementById("tab-autoreject");
   root.innerHTML = "";
@@ -583,7 +597,7 @@ async function renderAutoRejectLog() {
     "Each of these holds for 48 hours before its rejection email sends automatically. " +
     "Override any of them into Review before then if you want a second look."));
 
-  const candidates = await api("/api/candidates");
+  const [rubrics, candidates] = await Promise.all([getRubrics(), api("/api/candidates")]);
   const rejected = candidates.filter((c) => c.final_band === "AUTO_REJECT");
 
   const processBtn = el("button", {
@@ -627,7 +641,7 @@ async function renderAutoRejectLog() {
       el("span", {}, c.name || c.id),
       el("span", { class: "tag" }, c.applied_role),
       el("span", {}, String(score.total_points ?? "-")),
-      el("span", { class: "tag" }, (c.reason_codes || []).join(", ") || "-"),
+      el("span", { class: "tag" }, reasonCodesLine(rubrics, c.reason_codes)),
       el("span", { class: alreadySent ? "" : "tag" }, sendsText),
       el("button", {
         disabled: alreadySent ? "true" : undefined,
