@@ -202,16 +202,28 @@ async function renderScore() {
     "whose scoring call failed or timed out, or was uploaded some other way."));
 
   const candidates = await api("/api/candidates");
-  const pending = candidates.filter((c) => c.score_status === "not_scored");
+  // Duplicates and failed-to-parse files are never eligible for scoring by design (see
+  // db.list_candidates_needing_scoring) -- only a genuinely-parsed, still-unscored
+  // candidate is an actual straggler worth a retry button.
+  const pending = candidates.filter((c) => c.score_status === "not_scored" && c.parse_status === "ok");
+  const duplicates = candidates.filter((c) => c.score_status === "not_scored" && c.parse_status === "duplicate");
   const needsReview = candidates.filter((c) => c.score_status === "needs_manual_review");
 
   if (!pending.length && !needsReview.length) {
     root.appendChild(el("div", { class: "banner success" }, "Nothing waiting -- everything uploaded so far has been scored."));
+    if (duplicates.length) {
+      root.appendChild(el("p", { class: "muted" },
+        `(${duplicates.length} duplicate upload(s) on file, correctly skipped -- they're already scored under their first upload.)`));
+    }
     return;
   }
 
   if (pending.length) {
     root.appendChild(el("p", {}, `${pending.length} candidate(s) never got scored.`));
+  }
+  if (duplicates.length) {
+    root.appendChild(el("p", { class: "muted" },
+      `${duplicates.length} duplicate upload(s) skipped, not shown here -- see the original candidate instead.`));
   }
 
   const resultsDiv = el("div", {});
