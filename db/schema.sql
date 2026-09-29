@@ -67,3 +67,13 @@ ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_body TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_generated_at TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_sent_at TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS better_fit_note TEXT;
+
+-- Dedup by email alone broke on datasets where multiple different candidates share a
+-- placeholder/template email (e.g. a course's sample resume batch) -- switched to
+-- (email, name) together. NULLs are excluded from the constraint (Postgres treats each
+-- NULL as distinct anyway), matching db.find_duplicate_candidate's app-level logic of
+-- never calling something a duplicate when either name is missing.
+DROP INDEX IF EXISTS idx_candidates_email;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_email_name
+    ON candidates(email, lower(name))
+    WHERE email IS NOT NULL AND name IS NOT NULL AND is_duplicate_of IS NULL;

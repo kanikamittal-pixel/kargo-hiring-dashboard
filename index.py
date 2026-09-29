@@ -109,7 +109,7 @@ def upload():
             location_flag = compute_location_flag(contact.get("city"), raw_text)
             redacted = redact_text(raw_text, contact)
 
-            existing = db.find_candidate_by_email(contact.get("email"))
+            existing = db.find_duplicate_candidate(contact.get("name"), contact.get("email"))
             if existing:
                 is_duplicate_of = existing["id"]
                 parse_status = "duplicate"

@@ -33,13 +33,17 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def find_candidate_by_email(email: str):
-    if not email:
+def find_duplicate_candidate(name: str | None, email: str | None):
+    """Two uploads only count as the same candidate if BOTH name and email match --
+    email alone isn't reliable when a batch of resumes shares one placeholder/template
+    email (seen in practice: different real candidates, identical dummy contact info).
+    Requires both fields present; never calls it a duplicate on partial information."""
+    if not email or not name:
         return None
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM candidates WHERE email = %s AND is_duplicate_of IS NULL",
-            (email,),
+            "SELECT * FROM candidates WHERE email = %s AND lower(name) = lower(%s) AND is_duplicate_of IS NULL",
+            (email, name),
         ).fetchone()
         return dict(row) if row else None
 
