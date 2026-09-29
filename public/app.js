@@ -67,67 +67,128 @@ function loadTab(name) {
 function renderUpload() {
   const root = document.getElementById("tab-upload");
   root.innerHTML = "";
-  root.appendChild(el("h2", {}, "Bulk upload CVs"));
+  root.appendChild(el("h2", {}, "Upload CVs"));
+  root.appendChild(el("p", { class: "muted" },
+    "Drop in one or more resumes. If you don't know which role someone is applying for, leave " +
+    "it on Auto-detect -- the system scores against both PM and SPM and picks the best fit from " +
+    "their experience; you can always override per file below."));
 
   const roleSelect = el("select", {}, [
-    el("option", { value: "PM" }, "PM"),
-    el("option", { value: "SPM" }, "SPM"),
+    el("option", { value: "AUTO" }, "Auto-detect (recommended)"),
+    el("option", { value: "PM" }, "Product Manager"),
+    el("option", { value: "SPM" }, "Senior Product Manager"),
   ]);
   root.appendChild(el("div", { class: "field" }, [
-    el("label", {}, "Default applied role for this batch"), roleSelect,
+    el("label", {}, "Default role for this batch"), roleSelect,
   ]));
 
-  const fileInput = el("input", { type: "file", multiple: "true", accept: ".pdf,.docx" });
-  const fileListDiv = el("div", {});
-  root.appendChild(el("div", { class: "field" }, [
-    el("label", {}, "Upload CVs (PDF or DOCX)"), fileInput, fileListDiv,
-  ]));
+  const dropZone = el("div", { class: "dropzone" }, [
+    el("div", { class: "dropzone-icon" }, "📄"),
+    el("div", {}, "Drag & drop resumes here, or click to browse"),
+    el("div", { class: "muted small" }, "PDF or DOCX"),
+  ]);
+  const fileInput = el("input", { type: "file", multiple: "true", accept: ".pdf,.docx", class: "hidden-input" });
+  dropZone.appendChild(fileInput);
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    fileInput.files = e.dataTransfer.files;
+    fileInput.dispatchEvent(new Event("change"));
+  });
+  root.appendChild(el("div", { class: "field" }, [el("label", {}, "Resumes"), dropZone]));
+
+  const fileListDiv = el("div", { class: "file-list" });
+  root.appendChild(fileListDiv);
 
   const overrides = {};
+  let selectedFiles = [];
   fileInput.addEventListener("change", () => {
+    selectedFiles = Array.from(fileInput.files);
     fileListDiv.innerHTML = "";
-    overrides["_files"] = fileInput.files;
-    Array.from(fileInput.files).forEach((f) => {
+    selectedFiles.forEach((f) => {
       const sel = el("select", {}, [
         el("option", { value: "" }, "(use default)"),
         el("option", { value: "PM" }, "PM"),
         el("option", { value: "SPM" }, "SPM"),
       ]);
       sel.addEventListener("change", () => { overrides[f.name] = sel.value; });
-      fileListDiv.appendChild(el("div", { class: "file-list-item" }, [el("span", {}, f.name), sel]));
+      fileListDiv.appendChild(el("div", { class: "file-list-item" }, [
+        el("span", { class: "file-name" }, `📎 ${f.name}`), sel,
+      ]));
     });
+    submitBtn.disabled = selectedFiles.length === 0;
   });
 
-  const resultsDiv = el("div", {});
+  const progressDiv = el("div", { class: "progress-list" });
   const submitBtn = el("button", {
     class: "primary",
+    disabled: "true",
     onclick: async () => {
-      if (!fileInput.files.length) return;
+      if (!selectedFiles.length) return;
       submitBtn.disabled = true;
+      progressDiv.innerHTML = "";
+      const stepLine = el("div", { class: "spinner" }, "Uploading and reading resumes...");
+      progressDiv.appendChild(stepLine);
+
       const fd = new FormData();
       fd.append("default_role", roleSelect.value);
       const cleanOverrides = {};
       for (const [k, v] of Object.entries(overrides)) {
-        if (k !== "_files" && v) cleanOverrides[k] = v;
+        if (v) cleanOverrides[k] = v;
       }
       fd.append("role_overrides", JSON.stringify(cleanOverrides));
-      Array.from(fileInput.files).forEach((f) => fd.append("files", f));
+      selectedFiles.forEach((f) => fd.append("files", f));
 
+      let uploadResults;
       try {
         const data = await api("/api/upload", { method: "POST", body: fd });
-        resultsDiv.innerHTML = "";
-        resultsDiv.appendChild(el("div", { class: "banner success" }, `Processed ${data.results.length} files.`));
-        data.results.forEach((r) => {
-          resultsDiv.appendChild(el("div", {}, `${r.filename}: ${r.status}`));
-        });
-        toast("Batch processed.", "success");
-      } finally {
+        uploadResults = data.results;
+      } catch {
+        stepLine.remove();
         submitBtn.disabled = false;
+        return;
       }
+
+      const scoreable = uploadResults.filter((r) => r.status === "ok" || r.status === "duplicate");
+      stepLine.textContent = `Uploaded ${uploadResults.length} file(s). Scoring ${scoreable.length}...`;
+
+      const rows = {};
+      uploadResults.forEach((r) => {
+        const row = el("div", { class: "progress-row" }, [
+          el("span", {}, r.filename),
+          el("span", { class: "tag" }, r.status === "duplicate" ? "duplicate -- already on file" : "queued"),
+        ]);
+        rows[r.candidate_id] = row;
+        progressDiv.appendChild(row);
+      });
+
+      for (const r of scoreable) {
+        if (r.status === "duplicate") continue;
+        const row = rows[r.candidate_id];
+        row.lastChild.textContent = "scoring...";
+        try {
+          const result = await api(`/api/candidates/${r.candidate_id}/score`, { method: "POST" });
+          row.lastChild.textContent = result.status === "scored"
+            ? `${result.name}: ${result.detail}`
+            : `${result.name || r.filename}: ${result.status}`;
+        } catch {
+          row.lastChild.textContent = "scoring failed -- retry from the Needs Attention tab";
+        }
+      }
+
+      stepLine.textContent = "Done. Check Shortlist, Review, or Auto-Reject Log for results.";
+      toast("Upload and scoring complete.", "success");
+      fileInput.value = "";
+      fileListDiv.innerHTML = "";
+      selectedFiles = [];
+      submitBtn.disabled = true;
     },
-  }, "Process batch");
+  }, "Upload & score");
   root.appendChild(submitBtn);
-  root.appendChild(resultsDiv);
+  root.appendChild(progressDiv);
 }
 
 // ---------- Score ----------
@@ -135,11 +196,23 @@ function renderUpload() {
 async function renderScore() {
   const root = document.getElementById("tab-score");
   root.innerHTML = "";
-  root.appendChild(el("h2", {}, "Score pending candidates"));
+  root.appendChild(el("h2", {}, "Needs attention"));
+  root.appendChild(el("p", { class: "muted" },
+    "Scoring runs automatically right after upload. This tab is only for stragglers -- a candidate " +
+    "whose scoring call failed or timed out, or was uploaded some other way."));
 
   const candidates = await api("/api/candidates");
   const pending = candidates.filter((c) => c.score_status === "not_scored");
-  root.appendChild(el("p", {}, `${pending.length} candidate(s) awaiting scoring.`));
+  const needsReview = candidates.filter((c) => c.score_status === "needs_manual_review");
+
+  if (!pending.length && !needsReview.length) {
+    root.appendChild(el("div", { class: "banner success" }, "Nothing waiting -- everything uploaded so far has been scored."));
+    return;
+  }
+
+  if (pending.length) {
+    root.appendChild(el("p", {}, `${pending.length} candidate(s) never got scored.`));
+  }
 
   const resultsDiv = el("div", {});
   const btn = el("button", {
@@ -160,14 +233,13 @@ async function renderScore() {
         btn.disabled = false;
       }
     },
-  }, "Score all pending candidates");
-  root.appendChild(btn);
+  }, "Retry scoring");
+  if (pending.length) root.appendChild(btn);
   root.appendChild(resultsDiv);
 
-  const needsReview = candidates.filter((c) => c.score_status === "needs_manual_review");
   if (needsReview.length) {
-    root.appendChild(el("div", { class: "banner warn" }, `${needsReview.length} candidate(s) need manual review.`));
-    needsReview.forEach((c) => root.appendChild(el("div", {}, `- ${c.name || c.id} (${c.applied_role})`)));
+    root.appendChild(el("h3", {}, "Failed validation twice"));
+    needsReview.forEach((c) => root.appendChild(el("div", { class: "banner warn" }, `${c.name || c.id} (${c.applied_role})`)));
   }
 }
 
@@ -369,13 +441,19 @@ function candidateCard(candidate, rubrics, scoresCache, onChange) {
   const otherRole = scoredRole === "pm" ? "spm" : "pm";
   const otherScore = scores[otherRole];
 
-  let title = `${candidate.name || candidate.id} -- ${scoredRole.toUpperCase()} -- ${candidate.final_band}`;
-  if (candidate.final_band_flag) title += ` (${candidate.final_band_flag})`;
-  if (candidate.reroute_label) title += ` -- ${candidate.reroute_label}`;
+  const bandClass = candidate.final_band.toLowerCase();
+  let subtitle = `${scoredRole.toUpperCase()} · ${score.total_points} pts`;
+  if (candidate.final_band_flag) subtitle += ` · ${candidate.final_band_flag}`;
+  if (candidate.reroute_label) subtitle += ` · ${candidate.reroute_label}`;
 
-  const card = el("div", { class: "card" });
+  const card = el("div", { class: `card band-${bandClass}` });
   const header = el("div", { class: "card-header", onclick: () => card.classList.toggle("open") }, [
-    el("span", {}, title), el("span", {}, "⌄"),
+    el("span", {}, [
+      el("span", {}, candidate.name || candidate.id),
+      el("span", { class: `badge ${bandClass}` }, candidate.final_band.replace("_", " ")),
+      el("span", { class: "tag" }, ` · ${subtitle}`),
+    ]),
+    el("span", { class: "chevron" }, "⌄"),
   ]);
   const body = el("div", { class: "card-body" });
 
@@ -501,6 +579,9 @@ async function renderAutoRejectLog() {
   const root = document.getElementById("tab-autoreject");
   root.innerHTML = "";
   root.appendChild(el("h2", {}, "Auto-reject log"));
+  root.appendChild(el("p", { class: "muted" },
+    "Each of these holds for 48 hours before its rejection email sends automatically. " +
+    "Override any of them into Review before then if you want a second look."));
 
   const candidates = await api("/api/candidates");
   const rejected = candidates.filter((c) => c.final_band === "AUTO_REJECT");
@@ -534,15 +615,20 @@ async function renderAutoRejectLog() {
     scoresCache[c.id] = detail.scores;
   }));
 
+  root.appendChild(el("div", { class: "log-row header" }, [
+    "Candidate", "Applied as", "Score", "Reason codes", "Sends", "",
+  ].map((h) => el("span", {}, h))));
+
   rejected.forEach((c) => {
     const score = scoresCache[c.id][c.final_role] || {};
     const alreadySent = !!c.resend_message_id;
+    const sendsText = alreadySent ? "Sent ✓" : (c.auto_reject_send_after ? formatDueIn(c.auto_reject_send_after) : "-");
     const row = el("div", { class: "log-row" }, [
       el("span", {}, c.name || c.id),
-      el("span", {}, c.applied_role),
+      el("span", { class: "tag" }, c.applied_role),
       el("span", {}, String(score.total_points ?? "-")),
-      el("span", {}, (c.reason_codes || []).join(", ") || "-"),
-      el("span", {}, alreadySent ? "Sent" : (c.auto_reject_send_after || "-")),
+      el("span", { class: "tag" }, (c.reason_codes || []).join(", ") || "-"),
+      el("span", { class: alreadySent ? "" : "tag" }, sendsText),
       el("button", {
         disabled: alreadySent ? "true" : undefined,
         onclick: async () => {
@@ -569,10 +655,50 @@ async function renderAutoRejectLog() {
 
 // ---------- Decision Log ----------
 
+const EVENT_LABELS = {
+  uploaded: { icon: "📥", text: "Uploaded" },
+  scored: { icon: "🧮", text: "Scored" },
+  banded: { icon: "🚫", text: "Auto-rejected -- queued" },
+  brief_generated: { icon: "📝", text: "Interview brief ready" },
+  brief_generation_failed: { icon: "⚠️", text: "Brief generation failed" },
+  email_drafted: { icon: "✉️", text: "Email drafted" },
+  email_draft_failed: { icon: "⚠️", text: "Email draft failed" },
+  advanced: { icon: "✅", text: "Advanced" },
+  passed: { icon: "❌", text: "Passed" },
+  overridden: { icon: "↩️", text: "Overridden to Review" },
+  email_sent: { icon: "📤", text: "Email sent" },
+  email_send_failed: { icon: "⚠️", text: "Send failed" },
+  needs_manual_review: { icon: "⚠️", text: "Needs manual review" },
+};
+
+function formatDueIn(isoString) {
+  const diffMs = new Date(isoString).getTime() - Date.now();
+  if (diffMs <= 0) return "due now";
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 60) return `in ${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `in ${hours}h`;
+  return `in ${Math.round(hours / 24)}d`;
+}
+
+function relativeTime(isoString) {
+  const then = new Date(isoString);
+  const diffMs = Date.now() - then.getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return then.toLocaleDateString();
+}
+
 async function renderDecisionLog() {
   const root = document.getElementById("tab-decisionlog");
   root.innerHTML = "";
   root.appendChild(el("h2", {}, "Decision log"));
+  root.appendChild(el("p", { class: "muted" }, "Newest first -- everything that's happened to every candidate, in order."));
 
   const events = await api("/api/decision-log");
   if (!events.length) {
@@ -580,13 +706,33 @@ async function renderDecisionLog() {
     return;
   }
 
-  root.appendChild(el("div", { class: "log-row header" }, ["Timestamp", "Candidate", "Event", "Detail", "Rubric version"].map((h) => el("span", {}, h))));
-  events.forEach((e) => {
-    root.appendChild(el("div", { class: "log-row" }, [
-      el("span", {}, e.created_at), el("span", {}, e.candidate_name),
-      el("span", {}, e.event), el("span", {}, e.detail || ""), el("span", {}, e.rubric_version || ""),
-    ]));
-  });
+  const names = [...new Set(events.map((e) => e.candidate_name))].sort();
+  const filterSelect = el("select", {}, [
+    el("option", { value: "" }, "All candidates"),
+    ...names.map((n) => el("option", { value: n }, n)),
+  ]);
+  root.appendChild(el("div", { class: "field" }, [el("label", {}, "Filter by candidate"), filterSelect]));
+
+  const listDiv = el("div", { class: "timeline" });
+  root.appendChild(listDiv);
+
+  function draw() {
+    listDiv.innerHTML = "";
+    const filtered = filterSelect.value ? events.filter((e) => e.candidate_name === filterSelect.value) : events;
+    filtered.forEach((e) => {
+      const meta = EVENT_LABELS[e.event] || { icon: "•", text: e.event };
+      const isWarning = e.event.includes("fail") || e.event === "needs_manual_review";
+      listDiv.appendChild(el("div", { class: `timeline-row${isWarning ? " timeline-warn" : ""}` }, [
+        el("span", { class: "timeline-icon" }, meta.icon),
+        el("span", { class: "timeline-candidate" }, e.candidate_name),
+        el("span", { class: "timeline-event" }, meta.text),
+        el("span", { class: "timeline-detail" }, e.detail || ""),
+        el("span", { class: "timeline-time", title: e.created_at }, relativeTime(e.created_at)),
+      ]));
+    });
+  }
+  filterSelect.addEventListener("change", draw);
+  draw();
 }
 
 // ---------- All Candidates (debug) ----------

@@ -4,14 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kargo Hiring Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header>
-    <h1>Kargo Hiring Dashboard</h1>
+    <div class="brand">
+      <div class="brand-mark">K</div>
+      <div>
+        <h1>Kargo Hiring Dashboard</h1>
+        <p class="brand-sub">Product &amp; Senior Product Manager pipeline</p>
+      </div>
+    </div>
     <nav id="tabs">
       <button class="tab-btn active" data-tab="upload">Upload</button>
-      <button class="tab-btn" data-tab="score">Score</button>
+      <button class="tab-btn" data-tab="score">Needs Attention</button>
       <button class="tab-btn" data-tab="shortlist">Shortlist</button>
       <button class="tab-btn" data-tab="review">Review</button>
       <button class="tab-btn" data-tab="autoreject">Auto-Reject Log</button>

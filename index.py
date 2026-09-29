@@ -17,7 +17,7 @@ from emailing.resend_client import SendError  # noqa: E402
 from generation.emails import generate_invite_email, generate_rejection_email  # noqa: E402
 from ingestion.parser import ParseError, parse_file  # noqa: E402
 from ingestion.redact import compute_location_flag, extract_contact_info, redact_text  # noqa: E402
-from scoring.pipeline import score_all_pending  # noqa: E402
+from scoring.pipeline import score_all_pending, score_candidates  # noqa: E402
 from scoring.scorer import load_rubrics  # noqa: E402
 
 # Vercel's native Flask integration builds this whole file into a single Vercel Function and
@@ -82,7 +82,11 @@ def get_rubrics():
 
 @app.route("/api/upload", methods=["POST"])
 def upload():
-    default_role = request.form.get("default_role", "PM")
+    # Role is optional: "" or "AUTO" means the uploader doesn't know which role the person
+    # is applying for, and scoring will pick PM vs SPM from their computed years of
+    # experience -- the gate/re-route/best-fit-note logic still catches anything that gets
+    # the initial guess wrong.
+    default_role = request.form.get("default_role") or "AUTO"
     role_overrides = json.loads(request.form.get("role_overrides") or "{}")
     files = request.files.getlist("files")
 
@@ -155,6 +159,20 @@ def get_candidate(candidate_id):
 def score():
     results = score_all_pending()
     return jsonify({"results": results})
+
+
+@app.route("/api/candidates/<candidate_id>/score", methods=["POST"])
+def score_one(candidate_id):
+    # One candidate per request, called automatically by the frontend right after upload
+    # (no manual "Score" click needed) -- keeps each request's LLM call within Vercel's
+    # per-function time limit, which a single request scoring a whole batch could exceed.
+    results = score_candidates([candidate_id])
+    if not results:
+        c = db.get_candidate(candidate_id)
+        if not c:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"candidate_id": candidate_id, "status": "already_scored"})
+    return jsonify(results[0])
 
 
 @app.route("/api/candidates/<candidate_id>/advance", methods=["POST"])

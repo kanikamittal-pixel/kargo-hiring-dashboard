@@ -12,7 +12,10 @@ BANNED_TERMS = (
 
 def _first_name(candidate: dict) -> str:
     name = (candidate.get("name") or "").strip()
-    return name.split()[0] if name else "there"
+    if not name:
+        return "there"
+    first = name.split()[0]
+    return first.capitalize() if first.isupper() else first
 
 
 def _contains_banned_term(text: str) -> str | None:

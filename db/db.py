@@ -311,11 +311,11 @@ def list_decision_log(candidate_id: str | None = None):
     with get_conn() as conn:
         if candidate_id:
             rows = conn.execute(
-                "SELECT * FROM decision_log WHERE candidate_id = %s ORDER BY created_at",
+                "SELECT * FROM decision_log WHERE candidate_id = %s ORDER BY created_at DESC",
                 (candidate_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM decision_log ORDER BY created_at"
+                "SELECT * FROM decision_log ORDER BY created_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]

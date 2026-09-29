@@ -31,6 +31,49 @@ SECTION_STRIP_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+SECTION_HEADER_WORDS = {
+    "summary", "profile", "objective", "experience", "education", "skills",
+    "projects", "certifications", "contact", "about", "resume", "curriculum vitae", "cv",
+    "work experience", "professional summary", "career objective",
+}
+
+# 2-4 capitalized-ish words (allows initials, hyphens, apostrophes: "J. R. Rao", "Anne-Marie O'Brien")
+NAME_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z.'\-]*(?:\s+[A-Za-z][A-Za-z.'\-]*){1,3}$")
+
+
+def _looks_like_name(line: str) -> bool:
+    line = line.strip()
+    if not (3 <= len(line) <= 50):
+        return False
+    if "@" in line or any(ch.isdigit() for ch in line):
+        return False
+    lowered = line.lower()
+    if lowered in SECTION_HEADER_WORDS or "http" in lowered or "linkedin.com" in lowered or "github.com" in lowered:
+        return False
+    return bool(NAME_LINE_RE.match(line))
+
+
+def _extract_name(lines: list[str], full_text: str) -> str | None:
+    for line in lines[:6]:
+        if _looks_like_name(line):
+            return line.strip()
+
+    # Fallback: name glued directly onto the next line's contact details with no separator
+    # in between -- a known PDF/DOCX text-extraction artifact (e.g. "Lavanya Iyerlavanya.iyer@x.com").
+    email_match = EMAIL_RE.search(full_text)
+    if email_match:
+        prefix_lines = full_text[: email_match.start()].strip().splitlines()
+        if prefix_lines:
+            candidate = prefix_lines[-1].strip()
+            words = candidate.split()
+            if 1 <= len(words) <= 4 and not any(ch.isdigit() for ch in candidate) and all(w[0].isupper() for w in words):
+                return candidate
+
+    # Last resort: the original bare heuristic -- still better than leaving it blank.
+    if lines and "@" not in lines[0] and not any(ch.isdigit() for ch in lines[0]) and len(lines[0]) < 60:
+        return lines[0]
+    return None
+
 
 def extract_contact_info(text: str) -> dict:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
@@ -43,11 +86,7 @@ def extract_contact_info(text: str) -> dict:
     linkedin_match = LINKEDIN_RE.search(text)
     linkedin = linkedin_match.group(0) if linkedin_match else None
 
-    name = None
-    if lines:
-        candidate_line = lines[0]
-        if "@" not in candidate_line and not any(ch.isdigit() for ch in candidate_line):
-            name = candidate_line
+    name = _extract_name(lines, text)
 
     city = None
     head_text = "\n".join(lines[:5]).lower()
