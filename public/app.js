@@ -623,11 +623,22 @@ async function renderBandTab(tabName, band) {
     scoresCache[c.id] = detail.scores;
   }));
 
-  matching
-    .sort((a, b) => (scoresCache[b.id][b.final_role]?.total_points || 0) - (scoresCache[a.id][a.final_role]?.total_points || 0))
-    .forEach((c) => {
+  const byScoreDesc = (a, b) => (scoresCache[b.id][b.final_role]?.total_points || 0) - (scoresCache[a.id][a.final_role]?.total_points || 0);
+
+  // Kept as two clearly separate sections rather than one mixed list -- PM and SPM are
+  // different rubrics with different thresholds, so "Shortlist" means a different bar
+  // for each, and mixing them made it hard to see who's shortlisted for which role.
+  [["pm", "PM"], ["spm", "SPM"]].forEach(([roleKey, roleLabel]) => {
+    const group = matching.filter((c) => c.final_role === roleKey).sort(byScoreDesc);
+    root.appendChild(el("h3", {}, `${roleLabel} -- ${band[0] + band.slice(1).toLowerCase()} (${group.length})`));
+    if (!group.length) {
+      root.appendChild(el("p", { class: "muted" }, `No ${roleLabel} candidates in ${band} yet.`));
+      return;
+    }
+    group.forEach((c) => {
       root.appendChild(candidateCard(c, rubrics, scoresCache, () => renderBandTab(tabName, band)));
     });
+  });
 }
 
 async function getRubrics() {
