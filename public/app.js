@@ -841,9 +841,21 @@ async function renderAllCandidates() {
   const roleSelect = el("select", {}, [
     el("option", { value: "All" }, "All roles"), el("option", { value: "PM" }, "PM"), el("option", { value: "SPM" }, "SPM"),
   ]);
+  const statusSelect = el("select", {}, [
+    el("option", { value: "All" }, "All statuses"),
+    el("option", { value: "SHORTLIST" }, "Shortlist"),
+    el("option", { value: "REVIEW" }, "Review"),
+    el("option", { value: "AUTO_REJECT" }, "Auto-reject"),
+    el("option", { value: "NOT_SCORED" }, "Not yet scored"),
+  ]);
   const listDiv = el("div", {});
   roleSelect.addEventListener("change", () => loadList());
-  root.appendChild(el("div", { class: "field" }, [el("label", {}, "Filter by applied role"), roleSelect]));
+  statusSelect.addEventListener("change", () => loadList());
+  const filters = el("div", { style: "display:flex; gap:24px; flex-wrap:wrap;" }, [
+    el("div", { class: "field", style: "margin-bottom:0;" }, [el("label", {}, "Filter by applied role"), roleSelect]),
+    el("div", { class: "field", style: "margin-bottom:0;" }, [el("label", {}, "Filter by status"), statusSelect]),
+  ]);
+  root.appendChild(filters);
   root.appendChild(listDiv);
 
   function candidateCardRow(c) {
@@ -912,11 +924,19 @@ async function renderAllCandidates() {
     return null;
   }
 
+  function matchesStatus(c) {
+    const status = statusSelect.value;
+    if (status === "All") return true;
+    if (status === "NOT_SCORED") return !c.final_band;
+    return c.final_band === status;
+  }
+
   async function loadList() {
     listDiv.innerHTML = "";
-    const candidates = await api(`/api/candidates?role=${roleSelect.value}`);
+    const all = await api(`/api/candidates?role=${roleSelect.value}`);
+    const candidates = all.filter(matchesStatus);
     if (!candidates.length) {
-      listDiv.appendChild(el("div", { class: "banner info" }, "No candidates uploaded yet."));
+      listDiv.appendChild(el("div", { class: "banner info" }, "No candidates match this filter."));
       return;
     }
 
