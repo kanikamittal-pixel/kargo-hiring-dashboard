@@ -716,8 +716,8 @@ async function renderAutoRejectLog() {
     const draftHeader = el("div", { class: "card-header", onclick: () => draftCard.classList.toggle("open") },
       [el("span", {}, `Rejection email draft -- ${c.name || c.id}`), el("span", {}, "⌄")]);
     const draftBody = el("div", { class: "card-body" }, [
-      el("div", { class: "muted" }, "Sends automatically after the 48h hold via the send queue -- use Override to stop it."),
-      emailDraftBlock(c, { allowSend: false }),
+      el("div", { class: "muted" }, "Sends automatically after the 48h hold, or click Send below to send it right now. Use Override instead if you want a second look before it goes out."),
+      emailDraftBlock(c, { allowSend: true, onChange: renderAutoRejectLog }),
     ]);
     draftCard.appendChild(draftHeader);
     draftCard.appendChild(draftBody);
