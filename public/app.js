@@ -171,9 +171,19 @@ function renderUpload() {
         row.lastChild.textContent = "scoring...";
         try {
           const result = await api(`/api/candidates/${r.candidate_id}/score`, { method: "POST" });
-          row.lastChild.textContent = result.status === "scored"
-            ? `${result.name}: ${result.detail}`
-            : `${result.name || r.filename}: ${result.status}`;
+          if (result.status !== "scored") {
+            row.lastChild.textContent = `${result.name || r.filename}: ${result.status}`;
+            continue;
+          }
+          row.lastChild.textContent = `${result.name}: ${result.detail} -- generating brief/email...`;
+          // Separate request on purpose: this is its own LLM call, and combining it with
+          // scoring in one request risked exceeding Vercel's per-function time limit.
+          try {
+            await api(`/api/candidates/${r.candidate_id}/followup`, { method: "POST" });
+            row.lastChild.textContent = `${result.name}: ${result.detail}`;
+          } catch {
+            row.lastChild.textContent = `${result.name}: ${result.detail} -- brief/email generation failed, retry from the Needs Attention tab`;
+          }
         } catch {
           row.lastChild.textContent = "scoring failed -- retry from the Needs Attention tab";
         }
@@ -208,8 +218,16 @@ async function renderScore() {
   const pending = candidates.filter((c) => c.score_status === "not_scored" && c.parse_status === "ok");
   const duplicates = candidates.filter((c) => c.score_status === "not_scored" && c.parse_status === "duplicate");
   const needsReview = candidates.filter((c) => c.score_status === "needs_manual_review");
+  // Scored successfully, but the follow-up brief/email-draft call never completed --
+  // e.g. it was killed mid-flight by a function timeout.
+  const missingFollowup = candidates.filter((c) => {
+    if (c.score_status !== "scored") return false;
+    if (c.final_band === "AUTO_REJECT") return !c.email_body;
+    if (c.final_band === "SHORTLIST" || c.final_band === "REVIEW") return !c.interview_brief_why;
+    return false;
+  });
 
-  if (!pending.length && !needsReview.length) {
+  if (!pending.length && !needsReview.length && !missingFollowup.length) {
     root.appendChild(el("div", { class: "banner success" }, "Nothing waiting -- everything uploaded so far has been scored."));
     if (duplicates.length) {
       root.appendChild(el("p", { class: "muted" },
@@ -248,6 +266,34 @@ async function renderScore() {
   }, "Retry scoring");
   if (pending.length) root.appendChild(btn);
   root.appendChild(resultsDiv);
+
+  if (missingFollowup.length) {
+    root.appendChild(el("h3", {}, "Scored, but brief/email draft never finished"));
+    missingFollowup.forEach((c) => {
+      const label = c.final_band === "AUTO_REJECT" ? "rejection email" : "interview brief";
+      const status = el("span", { class: "tag" }, `Generate ${label}`);
+      const row = el("div", { class: "progress-row" }, [
+        el("span", {}, `${c.name || c.id} (${c.final_band})`),
+        status,
+      ]);
+      const retryBtn = el("button", {
+        onclick: async () => {
+          retryBtn.disabled = true;
+          status.textContent = "generating...";
+          try {
+            await api(`/api/candidates/${c.id}/followup`, { method: "POST" });
+            status.textContent = "done";
+            renderScore();
+          } catch {
+            status.textContent = "failed again -- try once more";
+            retryBtn.disabled = false;
+          }
+        },
+      }, "Retry");
+      row.appendChild(retryBtn);
+      root.appendChild(row);
+    });
+  }
 
   if (needsReview.length) {
     root.appendChild(el("h3", {}, "Failed validation twice"));

@@ -11,25 +11,42 @@ from scoring.scorer import NeedsManualReview, load_rubrics, score_candidate
 
 def score_all_pending() -> list[dict]:
     """Scores every candidate with score_status='not_scored'. Returns a list of
-    {candidate_id, name, status, detail} so the caller can show a results log."""
+    {candidate_id, name, status, detail} so the caller can show a results log.
+    Used by the manual "Retry scoring" fallback button, not the primary upload flow --
+    each candidate here still does scoring + brief/email-draft generation in one call,
+    which is why the primary flow instead calls score_only() and generate_followup()
+    as two separate requests (see index.py)."""
     rubrics = load_rubrics()
-    return [_score_one(c, rubrics) for c in db.list_candidates_needing_scoring()]
+    results = []
+    for candidate in db.list_candidates_needing_scoring():
+        result = score_only(candidate, rubrics)
+        if result["status"] == "scored":
+            generate_followup(candidate["id"], rubrics)
+        results.append(result)
+    return results
 
 
 def score_candidates(candidate_ids: list[str]) -> list[dict]:
     """Scores a specific set of candidates (e.g. a just-uploaded batch), skipping any that
-    are already scored. Used to score automatically right after upload, with no manual step."""
+    are already scored."""
     rubrics = load_rubrics()
     results = []
     for candidate_id in candidate_ids:
         candidate = db.get_candidate(candidate_id)
         if not candidate or candidate["score_status"] != "not_scored":
             continue
-        results.append(_score_one(candidate, rubrics))
+        result = score_only(candidate, rubrics)
+        if result["status"] == "scored":
+            generate_followup(candidate_id, rubrics)
+        results.append(result)
     return results
 
 
-def _score_one(candidate: dict, rubrics: dict) -> dict:
+def score_only(candidate: dict, rubrics: dict) -> dict:
+    """Scoring only -- one LLM call. Split out from brief/email-draft generation (a second,
+    separate LLM call) so each stays comfortably inside Vercel's per-function time limit;
+    combining both in one request risked the second call getting silently killed mid-flight
+    with no error logged, after scoring itself had already succeeded and been saved."""
     label = candidate.get("name") or candidate["id"]
     try:
         decision = score_candidate(
@@ -49,9 +66,6 @@ def _score_one(candidate: dict, rubrics: dict) -> dict:
 
         if decision["band"] == "AUTO_REJECT":
             db.log_event(candidate["id"], "banded", detail="AUTO_REJECT, 48h hold queued")
-            _draft_rejection_for_auto_reject(candidate["id"], rubrics)
-        elif decision["band"] in ("SHORTLIST", "REVIEW"):
-            _generate_brief(candidate["id"], rubrics)
 
         return {"candidate_id": candidate["id"], "name": label, "status": "scored", "detail": detail}
     except NeedsManualReview as e:
@@ -65,6 +79,29 @@ def _score_one(candidate: dict, rubrics: dict) -> dict:
         detail = f"Unexpected error during scoring: {e}"
         db.log_event(candidate["id"], "needs_manual_review", detail=detail)
         return {"candidate_id": candidate["id"], "name": label, "status": "needs_manual_review", "detail": detail}
+
+
+def generate_followup(candidate_id: str, rubrics: dict | None = None) -> dict:
+    """Generates whatever the candidate's band calls for: an interview brief (Shortlist/
+    Review) or an auto-reject rejection draft (Auto-reject). Safe to call more than once --
+    skips if already generated, so a retry after a partial failure never double-generates."""
+    rubrics = rubrics or load_rubrics()
+    candidate = db.get_candidate(candidate_id)
+    if not candidate or candidate.get("score_status") != "scored":
+        return {"candidate_id": candidate_id, "status": "not_ready"}
+
+    band = candidate.get("final_band")
+    if band == "AUTO_REJECT":
+        if candidate.get("email_body"):
+            return {"candidate_id": candidate_id, "status": "already_generated"}
+        _draft_rejection_for_auto_reject(candidate_id, rubrics)
+        return {"candidate_id": candidate_id, "status": "email_drafted"}
+    if band in ("SHORTLIST", "REVIEW"):
+        if candidate.get("interview_brief_why"):
+            return {"candidate_id": candidate_id, "status": "already_generated"}
+        _generate_brief(candidate_id, rubrics)
+        return {"candidate_id": candidate_id, "status": "brief_generated"}
+    return {"candidate_id": candidate_id, "status": "nothing_to_generate"}
 
 
 def _generate_brief(candidate_id: str, rubrics: dict):

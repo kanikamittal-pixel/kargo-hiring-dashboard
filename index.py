@@ -17,7 +17,7 @@ from emailing.resend_client import SendError  # noqa: E402
 from generation.emails import generate_invite_email, generate_rejection_email  # noqa: E402
 from ingestion.parser import ParseError, parse_file  # noqa: E402
 from ingestion.redact import compute_location_flag, extract_contact_info, redact_text  # noqa: E402
-from scoring.pipeline import score_all_pending, score_candidates  # noqa: E402
+from scoring.pipeline import generate_followup, score_all_pending, score_only  # noqa: E402
 from scoring.scorer import load_rubrics  # noqa: E402
 
 # Vercel's native Flask integration builds this whole file into a single Vercel Function and
@@ -163,16 +163,26 @@ def score():
 
 @app.route("/api/candidates/<candidate_id>/score", methods=["POST"])
 def score_one(candidate_id):
-    # One candidate per request, called automatically by the frontend right after upload
-    # (no manual "Score" click needed) -- keeps each request's LLM call within Vercel's
-    # per-function time limit, which a single request scoring a whole batch could exceed.
-    results = score_candidates([candidate_id])
-    if not results:
-        c = db.get_candidate(candidate_id)
-        if not c:
-            return jsonify({"error": "not found"}), 404
+    # Scoring only -- one LLM call. The frontend calls /followup as a SEPARATE, second
+    # request right after this one succeeds (see public/app.js). Combining both in a
+    # single request risked exceeding Vercel's per-function time limit on the second
+    # (brief/email-draft) call, silently leaving it un-generated with no error logged.
+    candidate = db.get_candidate(candidate_id)
+    if not candidate:
+        return jsonify({"error": "not found"}), 404
+    if candidate["score_status"] != "not_scored":
         return jsonify({"candidate_id": candidate_id, "status": "already_scored"})
-    return jsonify(results[0])
+    rubrics = load_rubrics()
+    result = score_only(candidate, rubrics)
+    return jsonify(result)
+
+
+@app.route("/api/candidates/<candidate_id>/followup", methods=["POST"])
+def followup(candidate_id):
+    # Generates the interview brief (Shortlist/Review) or rejection draft (Auto-reject) for
+    # an already-scored candidate. Idempotent: no-ops if already generated.
+    result = generate_followup(candidate_id)
+    return jsonify(result)
 
 
 @app.route("/api/candidates/<candidate_id>/advance", methods=["POST"])
