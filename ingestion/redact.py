@@ -37,8 +37,39 @@ SECTION_HEADER_WORDS = {
     "work experience", "professional summary", "career objective",
 }
 
+# Individual tokens that combine into resume section headers ("PROFESSIONAL EXPERIENCE",
+# "PROJECT EXPERIENCE", "WORK HISTORY"...). Checked word-by-word rather than as an exact
+# phrase, since SECTION_HEADER_WORDS only lists whole phrases actually seen so far and a
+# header line otherwise matches the same "2-4 capitalized words" shape as a person's name.
+SECTION_HEADER_TOKENS = {
+    "summary", "profile", "objective", "experience", "education", "skills",
+    "projects", "project", "certifications", "contact", "about", "resume",
+    "curriculum", "vitae", "cv", "professional", "work", "career", "history",
+    "extracurriculars", "extracurricular", "achievements", "activities",
+    "publications", "awards", "interests", "references", "personal", "details",
+}
+
+
+def _looks_like_section_header(line: str) -> bool:
+    words = [w.strip(".,:").lower() for w in line.split()]
+    return bool(words) and all(w in SECTION_HEADER_TOKENS for w in words)
+
 # 2-4 capitalized-ish words (allows initials, hyphens, apostrophes: "J. R. Rao", "Anne-Marie O'Brien")
 NAME_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z.'\-]*(?:\s+[A-Za-z][A-Za-z.'\-]*){1,3}$")
+
+# Institution names ("Delhi University", "Indian Institute of Technology") are also 2-4
+# capitalized words with no digits, so every name-extraction fallback below can otherwise
+# mistake one for a person's name if the real name line got skipped (e.g. it didn't match
+# NAME_LINE_RE, or the layout put the name past the first few lines).
+INSTITUTION_KEYWORDS = {
+    "university", "institute", "college", "school", "academy", "polytechnic",
+    "iit", "iim", "nit", "bits",
+}
+
+
+def _looks_like_institution(text: str) -> bool:
+    lowered = text.lower()
+    return any(re.search(rf"\b{kw}\b", lowered) for kw in INSTITUTION_KEYWORDS)
 
 
 def _collapse_adjacent_duplicate_letters(s: str) -> str:
@@ -92,7 +123,11 @@ def _looks_like_name(line: str) -> bool:
     lowered = line.lower()
     if lowered in SECTION_HEADER_WORDS or "http" in lowered or "linkedin.com" in lowered or "github.com" in lowered:
         return False
+    if _looks_like_section_header(line):
+        return False
     if not NAME_LINE_RE.match(line):
+        return False
+    if _looks_like_institution(line):
         return False
     return not _looks_corrupted(line)
 
@@ -115,6 +150,8 @@ def _extract_name(lines: list[str], full_text: str) -> str | None:
                 and not any(ch.isdigit() for ch in candidate)
                 and all(w[0].isupper() for w in words)
                 and not _looks_corrupted(candidate)
+                and not _looks_like_institution(candidate)
+                and not _looks_like_section_header(candidate)
             ):
                 return candidate
 
@@ -125,6 +162,8 @@ def _extract_name(lines: list[str], full_text: str) -> str | None:
         and not any(ch.isdigit() for ch in lines[0])
         and len(lines[0]) < 60
         and not _looks_corrupted(lines[0])
+        and not _looks_like_institution(lines[0])
+        and not _looks_like_section_header(lines[0])
     ):
         return lines[0]
     return None
@@ -146,7 +185,9 @@ def _name_from_filename(filename: str) -> str | None:
     if any(any(ch.isdigit() for ch in w) for w in words):
         return None
     candidate = " ".join(w.capitalize() for w in words)
-    return candidate if not _looks_corrupted(candidate) else None
+    if _looks_corrupted(candidate) or _looks_like_institution(candidate):
+        return None
+    return candidate
 
 
 def extract_contact_info(text: str, filename: str | None = None) -> dict:

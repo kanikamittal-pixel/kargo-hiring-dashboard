@@ -846,6 +846,72 @@ async function renderAllCandidates() {
   root.appendChild(el("div", { class: "field" }, [el("label", {}, "Filter by applied role"), roleSelect]));
   root.appendChild(listDiv);
 
+  function candidateCardRow(c) {
+    const card = el("div", { class: "card" });
+    const parseKind = c.parse_status === "ok" ? "shortlist" : c.parse_status === "duplicate" ? "review" : "auto_reject";
+    const scoreKind = c.score_status === "scored" ? "shortlist" : c.score_status === "needs_manual_review" ? "auto_reject" : "review";
+
+    const row = el("div", { class: "candidate-row" }, [
+      el("span", { class: "kv-name" }, c.name || "Unnamed candidate"),
+      el("span", { class: "tag" }, c.applied_role),
+      statusPill(PARSE_STATUS_LABEL[c.parse_status] || c.parse_status, parseKind),
+      statusPill(SCORE_STATUS_LABEL[c.score_status] || c.score_status, scoreKind),
+      el("span", { class: "tag" }, c.final_band ? c.final_band.replace("_", " ") : "-"),
+    ]);
+    row.addEventListener("click", () => card.classList.toggle("open"));
+
+    const body = el("div", { class: "card-body" }, [
+      el("h4", {}, "Contact"),
+      el("div", { class: "kv-list" }, [
+        contactField("Email", c.email),
+        contactField("Phone", c.phone),
+        contactField("LinkedIn", c.linkedin),
+        contactField("City", c.city),
+        contactField("Location flag", c.location_flag),
+        contactField("Source file", c.source_file),
+        c.is_duplicate_of ? contactField("Duplicate of", c.is_duplicate_of) : null,
+      ].filter(Boolean)),
+    ]);
+
+    const toggleBtn = el("button", {
+      onclick: (e) => {
+        e.stopPropagation();
+        const shown = redactedBlock.style.display !== "none";
+        redactedBlock.style.display = shown ? "none" : "block";
+        toggleBtn.textContent = shown ? "Show redacted text sent to the LLM" : "Hide redacted text";
+      },
+    }, "Show redacted text sent to the LLM");
+    const redactedBlock = el("textarea", { rows: "12", readonly: "true", style: "display:none;margin-top:10px;" }, c.redacted_text || "");
+    body.appendChild(toggleBtn);
+    body.appendChild(redactedBlock);
+
+    card.appendChild(row);
+    card.appendChild(body);
+    return card;
+  }
+
+  function appendGroup(container, title, group) {
+    container.appendChild(el("h3", {}, `${title} (${group.length})`));
+    if (!group.length) {
+      container.appendChild(el("p", { class: "muted" }, `No ${title} candidates yet.`));
+      return;
+    }
+    container.appendChild(el("div", { class: "candidate-row header" }, [
+      "Name", "Applied as", "Parse", "Scoring", "Band",
+    ].map((h) => el("span", {}, h))));
+    group.forEach((c) => container.appendChild(candidateCardRow(c)));
+  }
+
+  // A candidate's role isn't settled until scoring runs (auto-detect resolves it from
+  // experience), so grouping is keyed off final_role when present and falls back to an
+  // explicit applied_role choice, otherwise the candidate sits in "Not yet scored" rather
+  // than being guessed into PM or SPM.
+  function effectiveRole(c) {
+    if (c.final_role) return c.final_role.toLowerCase();
+    if (c.applied_role && c.applied_role !== "AUTO") return c.applied_role.toLowerCase();
+    return null;
+  }
+
   async function loadList() {
     listDiv.innerHTML = "";
     const candidates = await api(`/api/candidates?role=${roleSelect.value}`);
@@ -854,53 +920,13 @@ async function renderAllCandidates() {
       return;
     }
 
-    listDiv.appendChild(el("div", { class: "candidate-row header" }, [
-      "Name", "Applied as", "Parse", "Scoring", "Band",
-    ].map((h) => el("span", {}, h))));
+    const pm = candidates.filter((c) => effectiveRole(c) === "pm");
+    const spm = candidates.filter((c) => effectiveRole(c) === "spm");
+    const unassigned = candidates.filter((c) => effectiveRole(c) === null);
 
-    candidates.forEach((c) => {
-      const card = el("div", { class: "card" });
-      const parseKind = c.parse_status === "ok" ? "shortlist" : c.parse_status === "duplicate" ? "review" : "auto_reject";
-      const scoreKind = c.score_status === "scored" ? "shortlist" : c.score_status === "needs_manual_review" ? "auto_reject" : "review";
-
-      const row = el("div", { class: "candidate-row" }, [
-        el("span", { class: "kv-name" }, c.name || "Unnamed candidate"),
-        el("span", { class: "tag" }, c.applied_role),
-        statusPill(PARSE_STATUS_LABEL[c.parse_status] || c.parse_status, parseKind),
-        statusPill(SCORE_STATUS_LABEL[c.score_status] || c.score_status, scoreKind),
-        el("span", { class: "tag" }, c.final_band ? c.final_band.replace("_", " ") : "-"),
-      ]);
-      row.addEventListener("click", () => card.classList.toggle("open"));
-
-      const body = el("div", { class: "card-body" }, [
-        el("h4", {}, "Contact"),
-        el("div", { class: "kv-list" }, [
-          contactField("Email", c.email),
-          contactField("Phone", c.phone),
-          contactField("LinkedIn", c.linkedin),
-          contactField("City", c.city),
-          contactField("Location flag", c.location_flag),
-          contactField("Source file", c.source_file),
-          c.is_duplicate_of ? contactField("Duplicate of", c.is_duplicate_of) : null,
-        ].filter(Boolean)),
-      ]);
-
-      const toggleBtn = el("button", {
-        onclick: (e) => {
-          e.stopPropagation();
-          const shown = redactedBlock.style.display !== "none";
-          redactedBlock.style.display = shown ? "none" : "block";
-          toggleBtn.textContent = shown ? "Show redacted text sent to the LLM" : "Hide redacted text";
-        },
-      }, "Show redacted text sent to the LLM");
-      const redactedBlock = el("textarea", { rows: "12", readonly: "true", style: "display:none;margin-top:10px;" }, c.redacted_text || "");
-      body.appendChild(toggleBtn);
-      body.appendChild(redactedBlock);
-
-      card.appendChild(row);
-      card.appendChild(body);
-      listDiv.appendChild(card);
-    });
+    appendGroup(listDiv, "PM", pm);
+    appendGroup(listDiv, "SPM", spm);
+    if (unassigned.length) appendGroup(listDiv, "Not yet scored", unassigned);
   }
   loadList();
 }
