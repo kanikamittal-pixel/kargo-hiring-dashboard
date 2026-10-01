@@ -157,11 +157,14 @@ function renderUpload() {
 
       const rows = {};
       uploadResults.forEach((r) => {
+        const label = r.status === "duplicate" ? "duplicate -- already on file"
+          : r.status === "failed" ? `failed -- ${r.error || "unexpected error"}`
+          : "queued";
         const row = el("div", { class: "progress-row" }, [
           el("span", {}, r.filename),
-          el("span", { class: "tag" }, r.status === "duplicate" ? "duplicate -- already on file" : "queued"),
+          el("span", { class: "tag" }, label),
         ]);
-        rows[r.candidate_id] = row;
+        if (r.candidate_id) rows[r.candidate_id] = row;
         progressDiv.appendChild(row);
       });
 

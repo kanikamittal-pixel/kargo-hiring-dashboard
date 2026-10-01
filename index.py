@@ -72,6 +72,10 @@ def _init():
 
 @app.errorhandler(Exception)
 def handle_error(e):
+    # Without this, Vercel's function logs only ever showed the werkzeug access line
+    # ("POST /api/upload ... 500 -") with no trace of what actually raised, making any
+    # unhandled exception undebuggable after the fact.
+    app.logger.exception("Unhandled exception on %s %s", request.method, request.path)
     return jsonify({"error": str(e)}), 500
 
 
@@ -92,49 +96,66 @@ def upload():
 
     results = []
     for f in files:
-        applied_role = role_overrides.get(f.filename) or default_role
-        file_bytes = f.read()
-
-        candidate_id = f"C-{uuid.uuid4().hex[:8]}"
-        parse_status = "ok"
-        raw_text = ""
-        redacted = ""
-        contact = {"name": None, "email": None, "phone": None, "linkedin": None, "city": None}
-        location_flag = "unknown"
-        is_duplicate_of = None
-
+        # The whole per-file body is isolated in one try/except: a bug or a bad PDF/DOCX
+        # for ONE file must never take down the rest of the batch. Previously only
+        # ParseError was caught, and only around the parsing/extraction steps -- any other
+        # exception there, or anything thrown by the DB insert below (e.g. Postgres
+        # rejecting a NUL byte some PDF extractions produce), propagated all the way up
+        # to Flask's handler, 500-ing the ENTIRE /api/upload request and silently
+        # dropping every file in it, including ones that were otherwise fine.
         try:
-            raw_text = parse_file(f.filename, file_bytes)
-            contact = extract_contact_info(raw_text, filename=f.filename)
-            location_flag = compute_location_flag(contact.get("city"), raw_text)
-            redacted = redact_text(raw_text, contact)
+            applied_role = role_overrides.get(f.filename) or default_role
+            file_bytes = f.read()
 
-            existing = db.find_duplicate_candidate(contact.get("name"), contact.get("email"))
-            if existing:
-                is_duplicate_of = existing["id"]
-                parse_status = "duplicate"
-        except ParseError as e:
-            parse_status = "needs_manual_review"
-            redacted = f"[PARSE FAILED: {e}]"
+            candidate_id = f"C-{uuid.uuid4().hex[:8]}"
+            parse_status = "ok"
+            raw_text = ""
+            redacted = ""
+            contact = {"name": None, "email": None, "phone": None, "linkedin": None, "city": None}
+            location_flag = "unknown"
+            is_duplicate_of = None
 
-        db.insert_candidate({
-            "id": candidate_id,
-            "name": contact.get("name"),
-            "email": contact.get("email"),
-            "phone": contact.get("phone"),
-            "linkedin": contact.get("linkedin"),
-            "city": contact.get("city"),
-            "location_flag": location_flag,
-            "applied_role": applied_role,
-            "source_file": f.filename,
-            "raw_text": raw_text,
-            "redacted_text": redacted,
-            "parse_status": parse_status,
-            "is_duplicate_of": is_duplicate_of,
-            "created_at": db.now_iso(),
-        })
-        db.log_event(candidate_id, "uploaded", detail=f"file={f.filename}, role={applied_role}, status={parse_status}")
-        results.append({"filename": f.filename, "candidate_id": candidate_id, "status": parse_status})
+            try:
+                raw_text = parse_file(f.filename, file_bytes)
+                contact = extract_contact_info(raw_text, filename=f.filename)
+                location_flag = compute_location_flag(contact.get("city"), raw_text)
+                redacted = redact_text(raw_text, contact)
+
+                existing = db.find_duplicate_candidate(contact.get("name"), contact.get("email"))
+                if existing:
+                    is_duplicate_of = existing["id"]
+                    parse_status = "duplicate"
+            except ParseError as e:
+                parse_status = "needs_manual_review"
+                redacted = f"[PARSE FAILED: {e}]"
+
+            # Postgres text columns reject NUL (0x00) bytes, which some PDF text
+            # extractions produce for certain glyphs -- strip them so a corrupt-but-
+            # parseable PDF doesn't fail the DB insert below.
+            raw_text = raw_text.replace("\x00", "")
+            redacted = redacted.replace("\x00", "")
+
+            db.insert_candidate({
+                "id": candidate_id,
+                "name": contact.get("name"),
+                "email": contact.get("email"),
+                "phone": contact.get("phone"),
+                "linkedin": contact.get("linkedin"),
+                "city": contact.get("city"),
+                "location_flag": location_flag,
+                "applied_role": applied_role,
+                "source_file": f.filename,
+                "raw_text": raw_text,
+                "redacted_text": redacted,
+                "parse_status": parse_status,
+                "is_duplicate_of": is_duplicate_of,
+                "created_at": db.now_iso(),
+            })
+            db.log_event(candidate_id, "uploaded", detail=f"file={f.filename}, role={applied_role}, status={parse_status}")
+            results.append({"filename": f.filename, "candidate_id": candidate_id, "status": parse_status})
+        except Exception as e:
+            app.logger.exception("Unexpected error processing upload for %s", f.filename)
+            results.append({"filename": f.filename, "candidate_id": None, "status": "failed", "error": str(e)})
 
     return jsonify({"results": results})
 
