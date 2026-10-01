@@ -1,4 +1,10 @@
-from ingestion.redact import _looks_corrupted, _name_from_filename, extract_contact_info
+from ingestion.redact import (
+    _looks_corrupted,
+    _looks_like_job_title,
+    _looks_like_section_header,
+    _name_from_filename,
+    extract_contact_info,
+)
 
 
 def test_detects_doubled_letter_corruption():
@@ -63,3 +69,38 @@ def test_does_not_extract_institution_name_as_candidate_name():
     assert contact["name"] is None
 
     assert _name_from_filename("Delhi_University.pdf") is None
+
+
+def test_does_not_extract_section_header_with_connector_words_as_name():
+    # Real-world case: "Skills and Expertise" slipped past the original section-header
+    # guard because "and" and "expertise" weren't in the token set the all-words check
+    # required every word to match.
+    assert _looks_like_section_header("Skills and Expertise") is True
+    assert _looks_like_section_header("Awards & Achievements") is True
+
+    text = (
+        "Skills and Expertise\n"
+        "squad_3@pg27.mesaschool.co\n"
+        "PROFESSIONAL SUMMARY\n"
+        "Product leader with 5 years of experience.\n"
+    )
+    contact = extract_contact_info(text)
+    assert contact["name"] is None
+
+
+def test_does_not_extract_job_title_as_candidate_name():
+    # Real-world case: a job-title line ("AI Product Manager") sitting near a corrupted
+    # or skipped real name line also matches the "2-4 capitalized words, no digits" shape
+    # that the name heuristics otherwise accept.
+    for title in ["AI Product Manager", "Senior Business Analyst", "Software Engineer"]:
+        assert _looks_like_job_title(title) is True
+    assert _looks_like_job_title("Rohan Desai") is False
+
+    text = (
+        "AI Product Manager\n"
+        "squad_4@pg27.mesaschool.co\n"
+        "PROFESSIONAL SUMMARY\n"
+        "Product leader with 4 years of experience.\n"
+    )
+    contact = extract_contact_info(text)
+    assert contact["name"] is None

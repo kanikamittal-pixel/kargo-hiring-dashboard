@@ -47,12 +47,39 @@ SECTION_HEADER_TOKENS = {
     "curriculum", "vitae", "cv", "professional", "work", "career", "history",
     "extracurriculars", "extracurricular", "achievements", "activities",
     "publications", "awards", "interests", "references", "personal", "details",
+    "expertise", "qualifications", "responsibilities", "highlights", "strengths",
+    "competencies", "accomplishments",
 }
+
+# Connector words that can appear inside a section header ("Skills and Expertise",
+# "Awards & Achievements") without the header being a sequence of ALL header-keywords --
+# never disqualifying on their own, but also never enough by themselves to call a line a
+# section header or a name.
+HEADER_CONNECTOR_WORDS = {"and", "of", "the", "&"}
 
 
 def _looks_like_section_header(line: str) -> bool:
     words = [w.strip(".,:").lower() for w in line.split()]
-    return bool(words) and all(w in SECTION_HEADER_TOKENS for w in words)
+    if not words:
+        return False
+    meaningful = [w for w in words if w not in HEADER_CONNECTOR_WORDS]
+    return bool(meaningful) and all(w in SECTION_HEADER_TOKENS for w in meaningful)
+
+
+# Job-title words ("AI Product Manager", "Senior Business Analyst") are also 2-4
+# capitalized words with no digits, so a header/subtitle line sitting near the real name
+# can get mistaken for it the same way institution names and section headers can.
+JOB_TITLE_KEYWORDS = {
+    "manager", "analyst", "engineer", "director", "lead", "specialist", "intern",
+    "associate", "consultant", "developer", "designer", "strategist", "executive",
+    "officer", "founder", "president", "architect", "coordinator", "administrator",
+    "recruiter", "marketer", "accountant",
+}
+
+
+def _looks_like_job_title(text: str) -> bool:
+    words = [w.strip(".,:").lower() for w in text.split()]
+    return any(w in JOB_TITLE_KEYWORDS for w in words)
 
 # 2-4 capitalized-ish words (allows initials, hyphens, apostrophes: "J. R. Rao", "Anne-Marie O'Brien")
 NAME_LINE_RE = re.compile(r"^[A-Za-z][A-Za-z.'\-]*(?:\s+[A-Za-z][A-Za-z.'\-]*){1,3}$")
@@ -129,6 +156,8 @@ def _looks_like_name(line: str) -> bool:
         return False
     if _looks_like_institution(line):
         return False
+    if _looks_like_job_title(line):
+        return False
     return not _looks_corrupted(line)
 
 
@@ -152,6 +181,7 @@ def _extract_name(lines: list[str], full_text: str) -> str | None:
                 and not _looks_corrupted(candidate)
                 and not _looks_like_institution(candidate)
                 and not _looks_like_section_header(candidate)
+                and not _looks_like_job_title(candidate)
             ):
                 return candidate
 
@@ -164,6 +194,7 @@ def _extract_name(lines: list[str], full_text: str) -> str | None:
         and not _looks_corrupted(lines[0])
         and not _looks_like_institution(lines[0])
         and not _looks_like_section_header(lines[0])
+        and not _looks_like_job_title(lines[0])
     ):
         return lines[0]
     return None
@@ -185,7 +216,7 @@ def _name_from_filename(filename: str) -> str | None:
     if any(any(ch.isdigit() for ch in w) for w in words):
         return None
     candidate = " ".join(w.capitalize() for w in words)
-    if _looks_corrupted(candidate) or _looks_like_institution(candidate):
+    if _looks_corrupted(candidate) or _looks_like_institution(candidate) or _looks_like_job_title(candidate):
         return None
     return candidate
 
