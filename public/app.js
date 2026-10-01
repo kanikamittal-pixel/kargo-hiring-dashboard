@@ -979,6 +979,12 @@ async function renderAllCandidates() {
     return null;
   }
 
+  function matchesRole(c) {
+    const role = roleSelect.value;
+    if (role === "All") return true;
+    return effectiveRole(c) === role.toLowerCase();
+  }
+
   function matchesStatus(c) {
     const status = statusSelect.value;
     if (status === "All") return true;
@@ -997,8 +1003,13 @@ async function renderAllCandidates() {
     listDiv.innerHTML = "";
     listDiv.appendChild(el("div", { class: "spinner" }, "Loading candidates..."));
 
-    const [rubrics, all] = await Promise.all([getRubrics(), api(`/api/candidates?role=${roleSelect.value}`)]);
-    const candidates = all.filter(matchesStatus);
+    // The backend's role= query filters on applied_role, which is almost always "AUTO"
+    // (the uploader rarely knows PM vs SPM up front) -- the real PM/SPM split only exists
+    // in final_role, computed after scoring. So the role filter is applied client-side
+    // using the same effectiveRole() logic the PM/SPM grouping below already uses, instead
+    // of asking the backend to filter on a field that's usually just "AUTO" for everyone.
+    const [rubrics, all] = await Promise.all([getRubrics(), api("/api/candidates?role=All")]);
+    const candidates = all.filter((c) => matchesRole(c) && matchesStatus(c));
     candidates.sort((a, b) => {
       const diff = new Date(a.created_at) - new Date(b.created_at);
       return sortSelect.value === "oldest" ? diff : -diff;
