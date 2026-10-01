@@ -723,6 +723,28 @@ async function renderAutoRejectLog() {
     ]);
     root.appendChild(row);
 
+    const scoreCard = el("div", { class: "card" });
+    const scoreHeader = el("div", { class: "card-header", onclick: () => scoreCard.classList.toggle("open") },
+      [el("span", {}, `Why ${c.name || c.id} was rejected -- full score breakdown`), el("span", {}, "⌄")]);
+    const scoreBody = el("div", { class: "card-body" });
+    if (c.location_flag_note) {
+      scoreBody.appendChild(el("div", { class: "banner info" }, `Location: ${c.location_flag_note}`));
+    }
+    if (c.better_fit_note) {
+      scoreBody.appendChild(el("div", { class: "banner warn" }, `Best fit check: ${c.better_fit_note}`));
+    }
+    scoreBody.appendChild(el("h4", {}, "Gates"));
+    scoreBody.appendChild(gatesLine(score.gates, c.years_pm_experience));
+    scoreBody.appendChild(el("h4", {}, "Criteria"));
+    scoreBody.appendChild(criteriaTable(score.criteria));
+    scoreBody.appendChild(el("h4", {}, "Red flags"));
+    scoreBody.appendChild(redFlagsBlock(c.red_flags || [], rubrics));
+    scoreBody.appendChild(el("h4", {}, "Band reasoning"));
+    scoreBody.appendChild(el("div", {}, bandReasoning(c.final_role, score, rubrics)));
+    scoreCard.appendChild(scoreHeader);
+    scoreCard.appendChild(scoreBody);
+    root.appendChild(scoreCard);
+
     const draftCard = el("div", { class: "card" });
     const draftHeader = el("div", { class: "card-header", onclick: () => draftCard.classList.toggle("open") },
       [el("span", {}, `Rejection email draft -- ${c.name || c.id}`), el("span", {}, "⌄")]);
@@ -858,7 +880,7 @@ async function renderAllCandidates() {
   root.appendChild(filters);
   root.appendChild(listDiv);
 
-  function candidateCardRow(c) {
+  function candidateCardRow(c, rubrics, scores) {
     const card = el("div", { class: "card" });
     const parseKind = c.parse_status === "ok" ? "shortlist" : c.parse_status === "duplicate" ? "review" : "auto_reject";
     const scoreKind = c.score_status === "scored" ? "shortlist" : c.score_status === "needs_manual_review" ? "auto_reject" : "review";
@@ -885,6 +907,29 @@ async function renderAllCandidates() {
       ].filter(Boolean)),
     ]);
 
+    const score = scores && c.final_role ? scores[c.final_role] : null;
+    if (score) {
+      body.appendChild(el("h4", {}, "Score details"));
+      if (c.location_flag_note) {
+        body.appendChild(el("div", { class: "banner info" }, `Location: ${c.location_flag_note}`));
+      }
+      if (c.better_fit_note) {
+        body.appendChild(el("div", { class: "banner warn" }, `Best fit check: ${c.better_fit_note}`));
+      }
+      body.appendChild(el("div", { class: "muted", style: "margin-bottom:8px;" }, `${c.final_role.toUpperCase()} -- ${score.total_points} pts -- ${c.final_band ? c.final_band.replace("_", " ") : score.band}`));
+      body.appendChild(el("h4", {}, "Gates"));
+      body.appendChild(gatesLine(score.gates, c.years_pm_experience));
+      body.appendChild(el("h4", {}, "Criteria"));
+      body.appendChild(criteriaTable(score.criteria));
+      body.appendChild(el("h4", {}, "Red flags"));
+      body.appendChild(redFlagsBlock(c.red_flags || [], rubrics));
+      body.appendChild(el("h4", {}, "Band reasoning"));
+      body.appendChild(el("div", {}, bandReasoning(c.final_role, score, rubrics)));
+    } else if (c.score_status !== "scored") {
+      body.appendChild(el("h4", {}, "Score details"));
+      body.appendChild(el("p", { class: "muted" }, "Not scored yet."));
+    }
+
     const toggleBtn = el("button", {
       onclick: (e) => {
         e.stopPropagation();
@@ -902,7 +947,7 @@ async function renderAllCandidates() {
     return card;
   }
 
-  function appendGroup(container, title, group) {
+  function appendGroup(container, title, group, rubrics, scoresCache) {
     container.appendChild(el("h3", {}, `${title} (${group.length})`));
     if (!group.length) {
       container.appendChild(el("p", { class: "muted" }, `No ${title} candidates yet.`));
@@ -911,7 +956,7 @@ async function renderAllCandidates() {
     container.appendChild(el("div", { class: "candidate-row header" }, [
       "Name", "Applied as", "Parse", "Scoring", "Band",
     ].map((h) => el("span", {}, h))));
-    group.forEach((c) => container.appendChild(candidateCardRow(c)));
+    group.forEach((c) => container.appendChild(candidateCardRow(c, rubrics, scoresCache[c.id])));
   }
 
   // A candidate's role isn't settled until scoring runs (auto-detect resolves it from
@@ -933,20 +978,26 @@ async function renderAllCandidates() {
 
   async function loadList() {
     listDiv.innerHTML = "";
-    const all = await api(`/api/candidates?role=${roleSelect.value}`);
+    const [rubrics, all] = await Promise.all([getRubrics(), api(`/api/candidates?role=${roleSelect.value}`)]);
     const candidates = all.filter(matchesStatus);
     if (!candidates.length) {
       listDiv.appendChild(el("div", { class: "banner info" }, "No candidates match this filter."));
       return;
     }
 
+    const scoresCache = {};
+    await Promise.all(candidates.filter((c) => c.score_status === "scored").map(async (c) => {
+      const detail = await api(`/api/candidates/${c.id}`);
+      scoresCache[c.id] = detail.scores;
+    }));
+
     const pm = candidates.filter((c) => effectiveRole(c) === "pm");
     const spm = candidates.filter((c) => effectiveRole(c) === "spm");
     const unassigned = candidates.filter((c) => effectiveRole(c) === null);
 
-    appendGroup(listDiv, "PM", pm);
-    appendGroup(listDiv, "SPM", spm);
-    if (unassigned.length) appendGroup(listDiv, "Not yet scored", unassigned);
+    appendGroup(listDiv, "PM", pm, rubrics, scoresCache);
+    appendGroup(listDiv, "SPM", spm, rubrics, scoresCache);
+    if (unassigned.length) appendGroup(listDiv, "Not yet scored", unassigned, rubrics, scoresCache);
   }
   loadList();
 }
