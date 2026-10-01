@@ -499,6 +499,12 @@ function emailDraftBlock(candidate, { allowSend = false, onChange } = {}) {
   return wrap;
 }
 
+function contactFlagBanner(c) {
+  if (!c.contact_flag) return null;
+  return el("div", { class: "banner warn" },
+    "Email/phone looked corrupted during extraction and was dropped rather than stored wrong -- verify and fill in manually before sending anything to this candidate.");
+}
+
 function candidateCard(candidate, rubrics, scoresCache, onChange) {
   const scores = scoresCache[candidate.id];
   const scoredRole = candidate.final_role;
@@ -525,6 +531,9 @@ function candidateCard(candidate, rubrics, scoresCache, onChange) {
   if (candidate.location_flag_note) {
     body.appendChild(el("div", { class: "banner info" }, `Location: ${candidate.location_flag_note}`));
   }
+
+  const flagBanner = contactFlagBanner(candidate);
+  if (flagBanner) body.appendChild(flagBanner);
 
   if (candidate.better_fit_note) {
     body.appendChild(el("div", { class: "banner warn" }, `Best fit check: ${candidate.better_fit_note}`));
@@ -733,6 +742,8 @@ async function renderAutoRejectLog() {
     if (c.location_flag_note) {
       scoreBody.appendChild(el("div", { class: "banner info" }, `Location: ${c.location_flag_note}`));
     }
+    const autoRejectFlagBanner = contactFlagBanner(c);
+    if (autoRejectFlagBanner) scoreBody.appendChild(autoRejectFlagBanner);
     if (c.better_fit_note) {
       scoreBody.appendChild(el("div", { class: "banner warn" }, `Best fit check: ${c.better_fit_note}`));
     }
@@ -915,7 +926,8 @@ async function renderAllCandidates() {
         contactField("Source file", c.source_file),
         c.is_duplicate_of ? contactField("Duplicate of", c.is_duplicate_of) : null,
       ].filter(Boolean)),
-    ]);
+      contactFlagBanner(c),
+    ].filter(Boolean));
 
     const score = scores && c.final_role ? scores[c.final_role] : null;
     if (score) {

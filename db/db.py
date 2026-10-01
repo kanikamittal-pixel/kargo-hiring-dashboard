@@ -53,11 +53,11 @@ def insert_candidate(candidate: dict):
         conn.execute(
             """
             INSERT INTO candidates
-                (id, name, email, phone, linkedin, city, location_flag,
+                (id, name, email, phone, linkedin, city, location_flag, contact_flag,
                  applied_role, source_file, raw_text, redacted_text,
                  parse_status, is_duplicate_of, created_at)
             VALUES
-                (%(id)s, %(name)s, %(email)s, %(phone)s, %(linkedin)s, %(city)s, %(location_flag)s,
+                (%(id)s, %(name)s, %(email)s, %(phone)s, %(linkedin)s, %(city)s, %(location_flag)s, %(contact_flag)s,
                  %(applied_role)s, %(source_file)s, %(raw_text)s, %(redacted_text)s,
                  %(parse_status)s, %(is_duplicate_of)s, %(created_at)s)
             """,

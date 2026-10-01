@@ -1,4 +1,5 @@
 from ingestion.redact import (
+    _line_has_duplicated_run,
     _looks_corrupted,
     _looks_like_job_title,
     _looks_like_section_header,
@@ -104,3 +105,40 @@ def test_does_not_extract_job_title_as_candidate_name():
     )
     contact = extract_contact_info(text)
     assert contact["name"] is None
+
+
+def test_drops_email_and_phone_when_contact_line_has_duplicated_run():
+    # Real-world case: the same double-printed-header PDF artifact that corrupts names
+    # doesn't always interleave letter-by-letter -- here it printed the whole phone number
+    # twice in a row, which also corrupted the email sitting on the same line (an
+    # all-lowercase, punctuation-heavy string the letter-doubling signals don't catch).
+    bad_line = (
+        "Pune, India | +91 999091041 42 824854353 | +91 999091041 42 824854353 | "
+        "saqmuaand-_b6o@rkaprg-2p7m.mesaschool.co"
+    )
+    assert _line_has_duplicated_run(bad_line) is True
+
+    text = (
+        "AmMaAnN BBoOrkRaKrAR\n"
+        "AI Product Manager\n"
+        f"{bad_line}\n"
+        "Professional Summary\n"
+        "Product Manager with 3 years of experience.\n"
+    )
+    contact = extract_contact_info(text, filename="30_aman_borkar.pdf")
+    assert contact["email"] is None
+    assert contact["phone"] is None
+    assert contact["contact_flag"] == "corrupted"
+    assert contact["name"] == "Aman Borkar"
+
+
+def test_does_not_flag_clean_contact_line_as_duplicated():
+    # A corrupted name line nearby must NOT cause a perfectly fine contact line to be
+    # dropped too -- only the specific line the email/phone came from is re-checked.
+    clean_line = "+91 9820928 210123 4151345 squad_1@pg27.mesaschool.co rohan-mehta"
+    assert _line_has_duplicated_run(clean_line) is False
+
+    text = f"RROohHaAnN M MehEtHaTA\n{clean_line}\n"
+    contact = extract_contact_info(text)
+    assert contact["email"] == "squad_1@pg27.mesaschool.co"
+    assert contact["contact_flag"] is None

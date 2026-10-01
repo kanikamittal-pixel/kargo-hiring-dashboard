@@ -63,6 +63,7 @@ ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_body TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_generated_at TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS email_sent_at TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS better_fit_note TEXT;
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS contact_flag TEXT;
 
 -- Dedup by email alone broke on datasets where multiple different candidates share a
 -- placeholder/template email (e.g. a course's sample resume batch) -- switched to

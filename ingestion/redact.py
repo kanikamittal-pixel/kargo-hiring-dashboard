@@ -6,6 +6,18 @@ EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 PHONE_RE = re.compile(r"(\+?\d[\d\-\s]{8,}\d)")
 LINKEDIN_RE = re.compile(r"linkedin\.com/\S+", re.IGNORECASE)
 
+# The same "double-printed header" PDF artifact that corrupts names (see _looks_corrupted)
+# doesn't always interleave letter-by-letter -- sometimes it instead prints an entire run
+# (e.g. a phone number) twice in a row on the same line. That pattern doesn't trip the
+# per-letter corruption signals (especially for an all-lowercase, punctuation-heavy email
+# local-part), but an immediate duplicated run of 6+ characters is itself a reliable sign
+# that line's extraction is garbage, including whatever email/phone sits on it.
+DUPLICATED_RUN_RE = re.compile(r"(.{6,}?)\s*[|/]?\s*\1")
+
+
+def _line_has_duplicated_run(line: str) -> bool:
+    return bool(DUPLICATED_RUN_RE.search(line))
+
 MUMBAI_ALIASES = {"mumbai", "bombay"}
 
 KNOWN_CITIES = [
@@ -232,6 +244,20 @@ def extract_contact_info(text: str, filename: str | None = None) -> dict:
     linkedin_match = LINKEDIN_RE.search(text)
     linkedin = linkedin_match.group(0) if linkedin_match else None
 
+    # Only drop email/phone when the SPECIFIC line they were extracted from shows the
+    # duplicated-run artifact -- not just because a nearby name line was corrupted (a
+    # corrupted name doesn't imply the contact line next to it is also corrupted; the two
+    # are checked independently since only one line was actually re-verified here).
+    contact_flag = None
+    for line in lines[:6]:
+        line_has_email = email and email in line
+        line_has_phone = phone and phone in line
+        if (line_has_email or line_has_phone) and _line_has_duplicated_run(line):
+            email = None
+            phone = None
+            contact_flag = "corrupted"
+            break
+
     name = _extract_name(lines, text)
     if not name and filename:
         name = _name_from_filename(filename)
@@ -249,6 +275,7 @@ def extract_contact_info(text: str, filename: str | None = None) -> dict:
         "phone": phone,
         "linkedin": linkedin,
         "city": city,
+        "contact_flag": contact_flag,
     }
 
 

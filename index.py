@@ -143,6 +143,7 @@ def upload():
                 "linkedin": contact.get("linkedin"),
                 "city": contact.get("city"),
                 "location_flag": location_flag,
+                "contact_flag": contact.get("contact_flag"),
                 "applied_role": applied_role,
                 "source_file": f.filename,
                 "raw_text": raw_text,
@@ -152,6 +153,11 @@ def upload():
                 "created_at": db.now_iso(),
             })
             db.log_event(candidate_id, "uploaded", detail=f"file={f.filename}, role={applied_role}, status={parse_status}")
+            if contact.get("contact_flag"):
+                db.log_event(
+                    candidate_id, "contact_info_dropped",
+                    detail="Email/phone looked corrupted during extraction (duplicated text artifact) -- dropped rather than stored wrong. Fill in manually before sending any email.",
+                )
             results.append({"filename": f.filename, "candidate_id": candidate_id, "status": parse_status})
         except Exception as e:
             app.logger.exception("Unexpected error processing upload for %s", f.filename)
