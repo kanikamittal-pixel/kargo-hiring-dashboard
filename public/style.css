@@ -240,7 +240,7 @@ tr:last-child td { border-bottom: none; }
 
 /* All Candidates roster */
 .candidate-row {
-  display: grid; grid-template-columns: 1.8fr 0.7fr 1fr 1.2fr 1fr; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: 1.6fr 0.7fr 1fr 1.2fr 1fr 1fr; gap: 12px; align-items: center;
   padding: 14px 16px; font-size: 0.9rem; cursor: pointer; transition: background 0.3s linear;
 }
 .candidate-row:hover { background: var(--surface-hover); }

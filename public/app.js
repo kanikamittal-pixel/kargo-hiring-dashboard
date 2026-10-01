@@ -873,12 +873,18 @@ async function renderAllCandidates() {
     el("option", { value: "AUTO_REJECT" }, "Auto-reject"),
     el("option", { value: "NOT_SCORED" }, "Not yet scored"),
   ]);
+  const sortSelect = el("select", {}, [
+    el("option", { value: "newest" }, "Newest uploaded first"),
+    el("option", { value: "oldest" }, "Oldest uploaded first"),
+  ]);
   const listDiv = el("div", {});
   roleSelect.addEventListener("change", () => loadList());
   statusSelect.addEventListener("change", () => loadList());
+  sortSelect.addEventListener("change", () => loadList());
   const filters = el("div", { style: "display:flex; gap:24px; flex-wrap:wrap;" }, [
     el("div", { class: "field", style: "margin-bottom:0;" }, [el("label", {}, "Filter by applied role"), roleSelect]),
     el("div", { class: "field", style: "margin-bottom:0;" }, [el("label", {}, "Filter by status"), statusSelect]),
+    el("div", { class: "field", style: "margin-bottom:0;" }, [el("label", {}, "Sort by upload time"), sortSelect]),
   ]);
   root.appendChild(filters);
   root.appendChild(listDiv);
@@ -894,6 +900,7 @@ async function renderAllCandidates() {
       statusPill(PARSE_STATUS_LABEL[c.parse_status] || c.parse_status, parseKind),
       statusPill(SCORE_STATUS_LABEL[c.score_status] || c.score_status, scoreKind),
       el("span", { class: "tag" }, c.final_band ? c.final_band.replace("_", " ") : "-"),
+      el("span", { class: "tag" }, c.created_at ? relativeTime(c.created_at) : "-"),
     ]);
     row.addEventListener("click", () => card.classList.toggle("open"));
 
@@ -957,7 +964,7 @@ async function renderAllCandidates() {
       return;
     }
     container.appendChild(el("div", { class: "candidate-row header" }, [
-      "Name", "Applied as", "Parse", "Scoring", "Band",
+      "Name", "Applied as", "Parse", "Scoring", "Band", "Uploaded",
     ].map((h) => el("span", {}, h))));
     group.forEach((c) => container.appendChild(candidateCardRow(c, rubrics, scoresCache[c.id])));
   }
@@ -979,11 +986,27 @@ async function renderAllCandidates() {
     return c.final_band === status;
   }
 
+  // Switching either filter can fire loadList() again before the previous call's fetches
+  // finish (especially the per-candidate score fetches below, which are slow on a cold
+  // Vercel/Neon connection) -- without this guard, an earlier call's results could land
+  // AFTER a newer one's and either show stale data or duplicate rows under the new filter.
+  let loadToken = 0;
+
   async function loadList() {
+    const myToken = ++loadToken;
     listDiv.innerHTML = "";
+    listDiv.appendChild(el("div", { class: "spinner" }, "Loading candidates..."));
+
     const [rubrics, all] = await Promise.all([getRubrics(), api(`/api/candidates?role=${roleSelect.value}`)]);
     const candidates = all.filter(matchesStatus);
+    candidates.sort((a, b) => {
+      const diff = new Date(a.created_at) - new Date(b.created_at);
+      return sortSelect.value === "oldest" ? diff : -diff;
+    });
+    if (myToken !== loadToken) return;
+
     if (!candidates.length) {
+      listDiv.innerHTML = "";
       listDiv.appendChild(el("div", { class: "banner info" }, "No candidates match this filter."));
       return;
     }
@@ -993,7 +1016,9 @@ async function renderAllCandidates() {
       const detail = await api(`/api/candidates/${c.id}`);
       scoresCache[c.id] = detail.scores;
     }));
+    if (myToken !== loadToken) return;
 
+    listDiv.innerHTML = "";
     const pm = candidates.filter((c) => effectiveRole(c) === "pm");
     const spm = candidates.filter((c) => effectiveRole(c) === "spm");
     const unassigned = candidates.filter((c) => effectiveRole(c) === null);
